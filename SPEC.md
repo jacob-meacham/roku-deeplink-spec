@@ -116,7 +116,7 @@ Each supported channel is defined by these properties:
 |----------|---------|---------|---------|-------------|
 | **Channel ID** | `12` | `291097` | `61322` | `13` |
 | **Channel Name** | `Netflix` | `Disney+` | `HBO Max` | `Prime Video` |
-| **URL Regex** | `netflix\.com/(?:watch\|title)/(\d+)` | `disneyplus\.com/(?:play\|video)/([a-f0-9-]+)` | `(?:max\.com\|hbomax\.com)/(?:video/watch\|play)/([^/?]+)` | `(?:amazon\.com\|primevideo\.com)/.*?/([B][A-Z0-9]{9})` |
+| **URL Regex** | `netflix\.com/(?:watch\|title)/(\d+)` | `disneyplus\.com/(?:(?:play|video)/|browse/entity-)([a-f0-9-]+)` | `(?:max\.com|hbomax\.com)/(?:(?:movies|series)/[^/]+/|(?:video/watch|play)/)([^/?]+)` | `(?:amazon\.com\|primevideo\.com)/.*?/([B][A-Z0-9]{9})` |
 | **Content ID Format** | Numeric digits | UUID (hex + hyphens) | Alphanumeric + hyphens | ASIN (B + 9 alphanumeric) |
 | **Media Type Logic** | `/watch/` in URL = `"movie"`, `/title/` in URL = `"series"` | Always `"movie"` | Always `"movie"` | Always `"movie"` |
 | **Post-Launch Key** | `Play` | `Select` | `Select` | `Select` |
