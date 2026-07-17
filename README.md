@@ -29,4 +29,4 @@ To test your own implementation against the fixtures:
 2. Update the import in `test_reference.py` to point to your module
 3. Run `pytest test_reference.py -v`
 
-All 27 tests must pass (12 valid URLs + 11 invalid URLs + 4 playback commands).
+All 29 tests must pass (12 valid URLs + 11 invalid URLs + 6 playback commands).

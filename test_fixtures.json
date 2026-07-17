@@ -6,8 +6,7 @@
         "channel_id": "12",
         "channel_name": "Netflix",
         "content_id": "81444554",
-        "media_type": "movie",
-        "post_launch_key": "Play"
+        "media_type": "movie"
       }
     },
     {
@@ -16,8 +15,7 @@
         "channel_id": "12",
         "channel_name": "Netflix",
         "content_id": "12345",
-        "media_type": "movie",
-        "post_launch_key": "Play"
+        "media_type": "movie"
       }
     },
     {
@@ -26,8 +24,7 @@
         "channel_id": "12",
         "channel_name": "Netflix",
         "content_id": "80179766",
-        "media_type": "series",
-        "post_launch_key": "Play"
+        "media_type": "series"
       }
     },
     {
@@ -36,8 +33,7 @@
         "channel_id": "291097",
         "channel_name": "Disney+",
         "content_id": "f63db666-b097-4c61-99c1-b778de2d4ae1",
-        "media_type": "movie",
-        "post_launch_key": "Select"
+        "media_type": "movie"
       }
     },
     {
@@ -46,8 +42,7 @@
         "channel_id": "291097",
         "channel_name": "Disney+",
         "content_id": "abc-123-def",
-        "media_type": "movie",
-        "post_launch_key": "Select"
+        "media_type": "movie"
       }
     },
     {
@@ -56,8 +51,7 @@
         "channel_id": "61322",
         "channel_name": "HBO Max",
         "content_id": "bd43b2a4-1639-4197-96d4-2ec14eb45e9e",
-        "media_type": "movie",
-        "post_launch_key": "Select"
+        "media_type": "movie"
       }
     },
     {
@@ -66,8 +60,7 @@
         "channel_id": "61322",
         "channel_name": "HBO Max",
         "content_id": "some-show-id",
-        "media_type": "movie",
-        "post_launch_key": "Select"
+        "media_type": "movie"
       }
     },
     {
@@ -76,8 +69,7 @@
         "channel_id": "61322",
         "channel_name": "HBO Max",
         "content_id": "legacy-id",
-        "media_type": "movie",
-        "post_launch_key": "Select"
+        "media_type": "movie"
       }
     },
     {
@@ -86,8 +78,7 @@
         "channel_id": "13",
         "channel_name": "Prime Video",
         "content_id": "B0DKTFF815",
-        "media_type": "movie",
-        "post_launch_key": "Select"
+        "media_type": "movie"
       }
     },
     {
@@ -96,8 +87,7 @@
         "channel_id": "13",
         "channel_name": "Prime Video",
         "content_id": "B0FQM41JFJ",
-        "media_type": "movie",
-        "post_launch_key": "Select"
+        "media_type": "movie"
       }
     },
     {
@@ -106,8 +96,7 @@
         "channel_id": "13",
         "channel_name": "Prime Video",
         "content_id": "B0FQM41JFJ",
-        "media_type": "movie",
-        "post_launch_key": "Select"
+        "media_type": "movie"
       }
     },
     {
@@ -116,8 +105,7 @@
         "channel_id": "13",
         "channel_name": "Prime Video",
         "content_id": "B0EXAMPL12",
-        "media_type": "movie",
-        "post_launch_key": "Select"
+        "media_type": "movie"
       }
     }
   ],
@@ -173,8 +161,7 @@
         "channel_id": "12",
         "channel_name": "Netflix",
         "content_id": "81444554",
-        "media_type": "movie",
-        "post_launch_key": "Play"
+        "media_type": "movie"
       },
       "expected": {
         "type": "action_sequence",
@@ -190,8 +177,7 @@
         "channel_id": "291097",
         "channel_name": "Disney+",
         "content_id": "f63db666-b097-4c61-99c1-b778de2d4ae1",
-        "media_type": "movie",
-        "post_launch_key": "Select"
+        "media_type": "movie"
       },
       "expected": {
         "type": "action_sequence",
@@ -207,8 +193,7 @@
         "channel_id": "61322",
         "channel_name": "HBO Max",
         "content_id": "bd43b2a4-1639-4197-96d4-2ec14eb45e9e",
-        "media_type": "movie",
-        "post_launch_key": "Select"
+        "media_type": "movie"
       },
       "expected": {
         "type": "action_sequence",
@@ -224,8 +209,7 @@
         "channel_id": "13",
         "channel_name": "Prime Video",
         "content_id": "B0DKTFF815",
-        "media_type": "movie",
-        "post_launch_key": "Select"
+        "media_type": "movie"
       },
       "expected": {
         "type": "action_sequence",
@@ -233,6 +217,33 @@
           {"type": "launch", "channel_id": "13", "params": "contentId=B0DKTFF815&mediaType=movie"},
           {"type": "wait", "milliseconds": 2000},
           {"type": "keypress", "key": "Select", "count": 1}
+        ]
+      }
+    },
+    {
+      "input": {
+        "channel_id": "44191",
+        "channel_name": "Emby",
+        "content_id": "3f9a1c"
+      },
+      "expected": {
+        "type": "action_sequence",
+        "actions": [
+          {"type": "launch", "channel_id": "44191", "params": "Command=PlayNow&ItemIds=3f9a1c"}
+        ]
+      }
+    },
+    {
+      "input": {
+        "channel_id": "44191",
+        "channel_name": "Emby",
+        "content_id": "3f9a1c",
+        "resume_position_ticks": 12000000000
+      },
+      "expected": {
+        "type": "action_sequence",
+        "actions": [
+          {"type": "launch", "channel_id": "44191", "params": "Command=PlayNow&ItemIds=3f9a1c&StartPositionTicks=12000000000"}
         ]
       }
     }

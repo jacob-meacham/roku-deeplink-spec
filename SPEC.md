@@ -67,8 +67,7 @@ Takes a URL string. Returns an extraction result dict if the URL matches a suppo
   "channel_id": "12",
   "channel_name": "Netflix",
   "content_id": "81444554",
-  "media_type": "movie",
-  "post_launch_key": "Play"
+  "media_type": "movie"
 }
 ```
 
@@ -78,11 +77,12 @@ Takes a URL string. Returns an extraction result dict if the URL matches a suppo
 | `channel_name` | string | Human-readable channel name |
 | `content_id` | string | Content identifier extracted from the URL |
 | `media_type` | string | One of: `"movie"`, `"series"` |
-| `post_launch_key` | string | Key to press after launch: `"Play"` or `"Select"` |
 
-### Function 2: `build_playback_command(extraction_result) -> playback_command`
+This extraction result is one kind of **content descriptor**. Channels not addressed by URL (e.g. Emby) are never produced by Function 1 — the caller supplies their descriptor (same fields, plus optional channel-specific ones like Emby's `resume_position_ticks`).
 
-Takes an extraction result dict. Returns a playback command.
+### Function 2: `build_playback_command(descriptor) -> playback_command`
+
+Takes a content descriptor. Looks the channel up in the Channel Catalog and returns a playback command: a `launch` action followed by that channel's post-launch actions (which may be none).
 
 **Playback Command:**
 ```json
@@ -100,11 +100,11 @@ Takes an extraction result dict. Returns a playback command.
 
 | Action | Fields | Description |
 |--------|--------|-------------|
-| `launch` | `channel_id`, `params` | Launch the channel with deep link parameters |
-| `wait` | `milliseconds` | Delay before next action (always 2000) |
-| `keypress` | `key`, `count` | Press a remote key (count is always 1) |
+| `launch` | `channel_id`, `params` | Launch the channel with its params (always the first, sometimes the only, action) |
+| `wait` | `milliseconds` | Delay before the next action |
+| `keypress` | `key`, `count` | Press a remote key `count` times (`count` ≥ 1) |
 
-The `params` field is always formatted as: `contentId={content_id}&mediaType={media_type}`
+The command is always `[launch] + channel.post_launch_actions`. Nothing about the number or kind of post-launch actions is fixed: a channel may have none (Emby), a wait + one keypress (all current public channels), or any other sequence a future channel needs. Launch `params` are channel-specific (see the catalog); public channels use `contentId={content_id}&mediaType={media_type}`.
 
 ---
 
@@ -122,6 +122,8 @@ Each supported channel is defined by these properties:
 | **Post-Launch Key** | `Play` | `Select` | `Select` | `Select` |
 | **Public Domain(s)** | `netflix.com` | `disneyplus.com` | `max.com`, `hbomax.com` | `amazon.com`, `primevideo.com` |
 
+Emby (channel `44191`) is addressed by content descriptor rather than URL, and has no post-launch actions — see its entry below.
+
 ### Channel Details
 
 #### Netflix (Channel ID: 12)
@@ -136,8 +138,8 @@ Each supported channel is defined by these properties:
 
 #### Disney+ (Channel ID: 291097)
 
-- **URL regex:** `disneyplus\.com/(?:play|video)/([a-f0-9-]+)`
-- Captures UUID-format content IDs from `/play/{id}` or `/video/{id}` paths
+- **URL regex:** `disneyplus\.com/(?:(?:play|video)/|browse/entity-)([a-f0-9-]+)`
+- Captures UUID-format content IDs from `/play/{id}`, `/video/{id}`, or `/browse/entity-{id}` paths
 - Content IDs are lowercase hex with hyphens (e.g., `f63db666-b097-4c61-99c1-b778de2d4ae1`)
 - **Media type:** Always `"movie"`
 - **Post-launch key:** `Select` — Disney+ shows a profile selection screen; pressing Select chooses the default profile, then content auto-plays
@@ -146,9 +148,9 @@ Each supported channel is defined by these properties:
 
 #### HBO Max (Channel ID: 61322)
 
-- **URL regex:** `(?:max\.com|hbomax\.com)/(?:video/watch|play)/([^/?]+)`
+- **URL regex:** `(?:max\.com|hbomax\.com)/(?:(?:movies|series)/[^/]+/|(?:video/watch|play)/)([^/?]+)`
 - Matches both `max.com` (current domain) and `hbomax.com` (legacy domain)
-- Captures content ID from `/video/watch/{id}` or `/play/{id}` paths
+- Captures content ID from `/movies/{slug}/{id}`, `/series/{slug}/{id}`, `/video/watch/{id}`, or `/play/{id}` paths
 - Content ID stops at the first `/` or `?` character (captured by `[^/?]+`)
 - **Important:** For URLs like `/video/watch/{id1}/{id2}`, only the first ID is captured. Do NOT use `/movie/{id}` URLs — those IDs don't work for deep linking.
 - **Media type:** Always `"movie"`
@@ -170,6 +172,12 @@ Each supported channel is defined by these properties:
   - `https://amazon.com/dp/B0FQM41JFJ/ref=xyz` → content_id=`B0FQM41JFJ`, media_type=`movie`
   - `https://www.primevideo.com/detail/B0EXAMPL12` → content_id=`B0EXAMPL12`, media_type=`movie`
 
+#### Emby (Channel ID: 44191)
+
+- **Not addressed by public URL** (no `url_pattern`). Emby is a self-hosted media server; content is discovered through the caller's Emby library search (out of scope), which yields an item ID used as `content_id`.
+- **Launch params:** `Command=PlayNow&ItemIds={content_id}` (append `&StartPositionTicks={resume_position_ticks}` if the descriptor provides it). `PlayNow` begins playback directly.
+- **Post-launch actions:** none — the command is a single `launch` (no wait/keypress). ~2–3s to playback vs ~12s for a navigate-and-press sequence.
+
 ---
 
 ## 5. Algorithm
@@ -178,17 +186,16 @@ Each supported channel is defined by these properties:
 
 ```
 function convert_url_to_ecp_command(url):
-    for each channel in CHANNEL_CATALOG:
+    for each channel in CHANNEL_CATALOG where channel has a url_pattern:
         match = regex_search(channel.url_pattern, url)
         if match:
             content_id = match.capture_group(1)
             media_type = channel.determine_media_type(url)
             return {
-                channel_id:      channel.channel_id,
-                channel_name:    channel.channel_name,
-                content_id:      content_id,
-                media_type:      media_type,
-                post_launch_key: channel.post_launch_key,
+                channel_id:   channel.channel_id,
+                channel_name: channel.channel_name,
+                content_id:   content_id,
+                media_type:   media_type,
             }
     return null
 ```
@@ -202,29 +209,18 @@ function convert_url_to_ecp_command(url):
 ### Step 2: Build Playback Command
 
 ```
-function build_playback_command(extraction):
-    return {
-        type: "action_sequence",
-        actions: [
-            {
-                type: "launch",
-                channel_id: extraction.channel_id,
-                params: "contentId=" + extraction.content_id + "&mediaType=" + extraction.media_type,
-            },
-            {
-                type: "wait",
-                milliseconds: 2000,
-            },
-            {
-                type: "keypress",
-                key: extraction.post_launch_key,
-                count: 1,
-            },
-        ],
-    }
+function build_playback_command(descriptor):
+    channel = CHANNEL_CATALOG[descriptor.channel_id]
+    actions = [ {
+        type: "launch",
+        channel_id: descriptor.channel_id,
+        params: channel.build_launch_params(descriptor),
+    } ]
+    actions += channel.post_launch_actions   // may be empty
+    return { type: "action_sequence", actions: actions }
 ```
 
-The `params` string is always formatted as `contentId={content_id}&mediaType={media_type}` with no URL encoding needed (content IDs only contain alphanumeric characters and hyphens).
+`build_launch_params` follows the channel's catalog rule: public channels use `contentId={content_id}&mediaType={media_type}`; Emby uses `Command=PlayNow&ItemIds={content_id}` (+ optional `&StartPositionTicks={resume_position_ticks}`). No URL encoding is needed. `post_launch_actions` comes straight from the catalog and may be empty.
 
 ---
 
@@ -245,8 +241,7 @@ Step 1 - URL Extraction:
     channel_id: "12",
     channel_name: "Netflix",
     content_id: "81444554",
-    media_type: "movie",
-    post_launch_key: "Play"
+    media_type: "movie"
   }
 
 Step 2 - Playback Command:
@@ -279,8 +274,7 @@ Step 1 - URL Extraction:
     channel_id: "12",
     channel_name: "Netflix",
     content_id: "80179766",
-    media_type: "series",
-    post_launch_key: "Play"
+    media_type: "series"
   }
 
 Step 2 - Playback Command:
@@ -308,8 +302,7 @@ Step 1 - URL Extraction:
     channel_id: "291097",
     channel_name: "Disney+",
     content_id: "f63db666-b097-4c61-99c1-b778de2d4ae1",
-    media_type: "movie",
-    post_launch_key: "Select"
+    media_type: "movie"
   }
 
 Step 2 - Playback Command:
@@ -337,8 +330,7 @@ Step 1 - URL Extraction:
     channel_id: "61322",
     channel_name: "HBO Max",
     content_id: "bd43b2a4-1639-4197-96d4-2ec14eb45e9e",
-    media_type: "movie",
-    post_launch_key: "Select"
+    media_type: "movie"
   }
 ```
 
@@ -356,8 +348,7 @@ Step 1 - URL Extraction:
     channel_id: "13",
     channel_name: "Prime Video",
     content_id: "B0DKTFF815",
-    media_type: "movie",
-    post_launch_key: "Select"
+    media_type: "movie"
   }
 ```
 
@@ -375,6 +366,24 @@ Step 1 - URL Extraction:
   Result: null
 ```
 
+### Example 7: Emby (descriptor, launch-only)
+
+```
+Input (descriptor from a library search, not a URL):
+  { channel_id: "44191", channel_name: "Emby", content_id: "3f9a1c" }
+
+Step 2 - Playback Command (catalog: Emby params + post-launch []):
+  {
+    type: "action_sequence",
+    actions: [
+      {type: "launch", channel_id: "44191", params: "Command=PlayNow&ItemIds=3f9a1c"}
+    ]
+  }
+
+With a resume position, the launch params become:
+  "Command=PlayNow&ItemIds=3f9a1c&StartPositionTicks=12000000000"
+```
+
 ---
 
 ## 7. Questions to Ask the User
@@ -383,7 +392,7 @@ Before implementing, gather these from the user:
 
 1. **Roku device IP address** — Required to construct ECP URLs. The Roku must be on the same local network. Users can find this in Roku Settings > Network > About.
 
-2. **Which streaming services do you subscribe to?** — Determines which channels to include. Options: Netflix, Disney+, HBO Max (Max), Prime Video. Only include channels the user actually has installed on their Roku.
+2. **Which channels do you want?** — Determines which channels to include. Options: Netflix, Disney+, HBO Max (Max), Prime Video (all addressed by URL), and/or Emby (a self-hosted server, addressed by descriptor). Only include channels the user actually has.
 
 3. **Do you need the full playback command or just URL extraction?** — Some use cases only need to identify the channel and content ID from a URL, without generating the full ECP action sequence.
 
@@ -401,7 +410,7 @@ To add support for a new streaming service, you need these 6 pieces of informati
 
 4. **Media Type Logic** — Does the URL distinguish between movies and series? Most channels use a single URL format for all content (always return `"movie"`). Some (like Netflix) use different URL paths.
 
-5. **Post-Launch Key** — After launching the channel with a deep link, does the user need to press `Play` to start playback, or `Select` to choose a profile? Test by running:
+5. **Post-Launch Actions** — After launching, what does it take to start playback? Nothing (the launch params auto-play, like Emby's `Command=PlayNow`), a wait then a keypress (`Play` for a content detail page, `Select` for profile selection), or several actions. Record the exact ordered list; it may be empty. Test by running:
    ```
    curl -X POST "http://{roku_ip}:8060/launch/{channel_id}?contentId={id}&mediaType=movie"
    ```
@@ -420,16 +429,15 @@ Any implementation must expose exactly these two functions:
 ### `convert_url_to_ecp_command(url: string) -> dict | null`
 
 - Accepts a single URL string
-- Returns an extraction result dict with fields: `channel_id`, `channel_name`, `content_id`, `media_type`, `post_launch_key`
-- Returns `null`/`None`/`nil` if the URL does not match any supported channel
+- Returns an extraction result dict with fields: `channel_id`, `channel_name`, `content_id`, `media_type`
+- Returns `null`/`None`/`nil` if the URL does not match any supported URL channel
 - Must use `search` (not `match`) regex semantics — the pattern can appear anywhere in the URL
 
-### `build_playback_command(extraction: dict) -> dict`
+### `build_playback_command(descriptor: dict) -> dict`
 
-- Accepts an extraction result dict (the output of `convert_url_to_ecp_command`)
-- Returns a playback command dict with fields: `type` (always `"action_sequence"`), `actions` (list of 3 action dicts)
-- The actions are always: launch, wait 2000ms, keypress
-- The `params` field is always: `contentId={content_id}&mediaType={media_type}`
+- Accepts a content descriptor (the output of `convert_url_to_ecp_command`, or a caller-supplied descriptor for a non-URL channel)
+- Returns a playback command dict with fields: `type` (always `"action_sequence"`), `actions` (a `launch` followed by the channel's post-launch actions, which may be none)
+- Launch `params` follow the channel's catalog rule
 
 ---
 
@@ -438,4 +446,4 @@ Any implementation must expose exactly these two functions:
 See `test_fixtures.json` for a complete set of test cases:
 - **12 valid URLs** covering all channels and edge cases (with/without www, query params, legacy domains)
 - **11 invalid URLs** that should return null (browse pages, root pages, search pages, unsupported services)
-- **4 playback command cases** validating the full action sequence for each channel
+- **6 playback command cases**: the four public channels (wait + keypress) and Emby (launch-only, with and without a resume position)
