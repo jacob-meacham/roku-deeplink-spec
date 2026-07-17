@@ -16,9 +16,9 @@ Ask the user these questions:
 
 Read SPEC.md in this directory, then implement exactly two functions:
 
-- `convert_url_to_ecp_command(url)` — Takes a streaming URL string, returns a structured extraction result (channel ID, content ID, media type) or null if the URL doesn't match any supported URL channel.
+- `convert_url_to_ecp_command(url)` — Takes a streaming URL string, returns a structured extraction result (channel ID, content ID, media type, post-launch key) or null if the URL doesn't match any supported URL channel.
 
-- `build_playback_command(descriptor)` — Takes a content descriptor, returns an action sequence: a launch action followed by the channel's post-launch actions (which may be none, as for Emby).
+- `build_playback_command(descriptor)` — Takes a content descriptor, returns an action sequence: a launch action, then a wait + keypress when the descriptor has a post-launch key, or just the launch for a launch-only channel like Emby.
 
 The spec contains the complete channel catalog (regex patterns, channel IDs, media type logic), the algorithm, and worked examples for every channel.
 
@@ -33,5 +33,5 @@ Test fixtures are in test_fixtures.json in this directory. Run your implementati
 
 - Use regex **search** (find anywhere in string), not match-from-start
 - Netflix is the only channel with non-trivial media type logic: `/watch/` = movie, `/title/` = series. All other URL channels always return "movie".
-- Launch params are per-channel: `contentId={id}&mediaType={type}` for the public channels, `Command=PlayNow&ItemIds={id}` for Emby — no URL encoding needed
-- Post-launch actions are per-channel, not fixed: Netflix presses `Play`; Disney+/HBO Max/Prime press `Select` after a 2000ms wait; Emby has none. Read the list from the catalog — don't hard-code one wait + one press.
+- Launch params are per-channel: `contentId={id}&mediaType={type}` for URL channels, `Command=PlayNow&ItemIds={id}` for Emby — no URL encoding needed
+- Post-launch is driven by the extraction's `post_launch_key`: when present, the command is launch → wait 2000ms → keypress that key; a launch-only channel (Emby, no key) is just the launch. Netflix uses `Play`; the other URL channels use `Select`.

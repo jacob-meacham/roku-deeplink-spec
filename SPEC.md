@@ -67,7 +67,8 @@ Takes a URL string. Returns an extraction result dict if the URL matches a suppo
   "channel_id": "12",
   "channel_name": "Netflix",
   "content_id": "81444554",
-  "media_type": "movie"
+  "media_type": "movie",
+  "post_launch_key": "Play"
 }
 ```
 
@@ -77,12 +78,13 @@ Takes a URL string. Returns an extraction result dict if the URL matches a suppo
 | `channel_name` | string | Human-readable channel name |
 | `content_id` | string | Content identifier extracted from the URL |
 | `media_type` | string | One of: `"movie"`, `"series"` |
+| `post_launch_key` | string | Key to press after launch: `"Play"` or `"Select"` |
 
-This extraction result is one kind of **content descriptor**. Channels not addressed by URL (e.g. Emby) are never produced by Function 1 — the caller supplies their descriptor (same fields, plus optional channel-specific ones like Emby's `resume_position_ticks`).
+This extraction result is one kind of **content descriptor**. Channels not addressed by URL (e.g. Emby) are never produced by Function 1 — the caller supplies their descriptor. Its `post_launch_key` may be absent for launch-only channels like Emby, plus optional channel-specific fields like `resume_position_ticks`.
 
 ### Function 2: `build_playback_command(descriptor) -> playback_command`
 
-Takes a content descriptor. Looks the channel up in the Channel Catalog and returns a playback command: a `launch` action followed by that channel's post-launch actions (which may be none).
+Takes a content descriptor. Returns a playback command: a `launch` action, then — if the descriptor has a `post_launch_key` — a `wait` and a `keypress`. Launch-only channels (no `post_launch_key`, e.g. Emby) return just the `launch`.
 
 **Playback Command:**
 ```json
@@ -104,7 +106,7 @@ Takes a content descriptor. Looks the channel up in the Channel Catalog and retu
 | `wait` | `milliseconds` | Delay before the next action |
 | `keypress` | `key`, `count` | Press a remote key `count` times (`count` ≥ 1) |
 
-The command is always `[launch] + channel.post_launch_actions`. Nothing about the number or kind of post-launch actions is fixed: a channel may have none (Emby), a wait + one keypress (all current public channels), or any other sequence a future channel needs. Launch `params` are channel-specific (see the catalog); public channels use `contentId={content_id}&mediaType={media_type}`.
+The command is `[launch]`, followed by `[wait 2000ms, keypress]` when the descriptor carries a `post_launch_key`, or nothing for a launch-only channel like Emby. Launch `params` are channel-specific (see the catalog); most channels use `contentId={content_id}&mediaType={media_type}`.
 
 ---
 
@@ -122,7 +124,7 @@ Each supported channel is defined by these properties:
 | **Post-Launch Key** | `Play` | `Select` | `Select` | `Select` |
 | **Public Domain(s)** | `netflix.com` | `disneyplus.com` | `max.com`, `hbomax.com` | `amazon.com`, `primevideo.com` |
 
-Emby (channel `44191`) is addressed by content descriptor rather than URL, and has no post-launch actions — see its entry below.
+Emby (channel `44191`) is addressed by content descriptor rather than URL, and is launch-only (no post-launch key) — see its entry below.
 
 ### Channel Details
 
@@ -176,7 +178,7 @@ Emby (channel `44191`) is addressed by content descriptor rather than URL, and h
 
 - **Not addressed by public URL** (no `url_pattern`). Emby is a self-hosted media server; content is discovered through the caller's Emby library search (out of scope), which yields an item ID used as `content_id`.
 - **Launch params:** `Command=PlayNow&ItemIds={content_id}` (append `&StartPositionTicks={resume_position_ticks}` if the descriptor provides it). `PlayNow` begins playback directly.
-- **Post-launch actions:** none — the command is a single `launch` (no wait/keypress). ~2–3s to playback vs ~12s for a navigate-and-press sequence.
+- **Post-launch key:** none — the command is a single `launch` (no wait/keypress). ~2–3s to playback vs ~12s for a navigate-and-press sequence.
 
 ---
 
@@ -192,10 +194,11 @@ function convert_url_to_ecp_command(url):
             content_id = match.capture_group(1)
             media_type = channel.determine_media_type(url)
             return {
-                channel_id:   channel.channel_id,
-                channel_name: channel.channel_name,
-                content_id:   content_id,
-                media_type:   media_type,
+                channel_id:      channel.channel_id,
+                channel_name:    channel.channel_name,
+                content_id:      content_id,
+                media_type:      media_type,
+                post_launch_key: channel.post_launch_key,
             }
     return null
 ```
@@ -211,16 +214,16 @@ function convert_url_to_ecp_command(url):
 ```
 function build_playback_command(descriptor):
     channel = CHANNEL_CATALOG[descriptor.channel_id]
-    actions = [ {
-        type: "launch",
-        channel_id: descriptor.channel_id,
-        params: channel.build_launch_params(descriptor),
-    } ]
-    actions += channel.post_launch_actions   // may be empty
+    actions = [ { type: "launch",
+                  channel_id: descriptor.channel_id,
+                  params: channel.build_launch_params(descriptor) } ]
+    if descriptor.post_launch_key is present:
+        actions += [ { type: "wait", milliseconds: 2000 },
+                     { type: "keypress", key: descriptor.post_launch_key, count: 1 } ]
     return { type: "action_sequence", actions: actions }
 ```
 
-`build_launch_params` follows the channel's catalog rule: public channels use `contentId={content_id}&mediaType={media_type}`; Emby uses `Command=PlayNow&ItemIds={content_id}` (+ optional `&StartPositionTicks={resume_position_ticks}`). No URL encoding is needed. `post_launch_actions` comes straight from the catalog and may be empty.
+`build_launch_params` follows the channel's catalog rule: most channels use `contentId={content_id}&mediaType={media_type}`; Emby uses `Command=PlayNow&ItemIds={content_id}` (+ optional `&StartPositionTicks={resume_position_ticks}`). No URL encoding is needed. The `wait` + `keypress` are appended only when the descriptor carries a `post_launch_key`.
 
 ---
 
@@ -241,7 +244,8 @@ Step 1 - URL Extraction:
     channel_id: "12",
     channel_name: "Netflix",
     content_id: "81444554",
-    media_type: "movie"
+    media_type: "movie",
+    post_launch_key: "Play"
   }
 
 Step 2 - Playback Command:
@@ -274,7 +278,8 @@ Step 1 - URL Extraction:
     channel_id: "12",
     channel_name: "Netflix",
     content_id: "80179766",
-    media_type: "series"
+    media_type: "series",
+    post_launch_key: "Play"
   }
 
 Step 2 - Playback Command:
@@ -302,7 +307,8 @@ Step 1 - URL Extraction:
     channel_id: "291097",
     channel_name: "Disney+",
     content_id: "f63db666-b097-4c61-99c1-b778de2d4ae1",
-    media_type: "movie"
+    media_type: "movie",
+    post_launch_key: "Select"
   }
 
 Step 2 - Playback Command:
@@ -330,7 +336,8 @@ Step 1 - URL Extraction:
     channel_id: "61322",
     channel_name: "HBO Max",
     content_id: "bd43b2a4-1639-4197-96d4-2ec14eb45e9e",
-    media_type: "movie"
+    media_type: "movie",
+    post_launch_key: "Select"
   }
 ```
 
@@ -348,7 +355,8 @@ Step 1 - URL Extraction:
     channel_id: "13",
     channel_name: "Prime Video",
     content_id: "B0DKTFF815",
-    media_type: "movie"
+    media_type: "movie",
+    post_launch_key: "Select"
   }
 ```
 
@@ -410,7 +418,7 @@ To add support for a new streaming service, you need these 6 pieces of informati
 
 4. **Media Type Logic** — Does the URL distinguish between movies and series? Most channels use a single URL format for all content (always return `"movie"`). Some (like Netflix) use different URL paths.
 
-5. **Post-Launch Actions** — After launching, what does it take to start playback? Nothing (the launch params auto-play, like Emby's `Command=PlayNow`), a wait then a keypress (`Play` for a content detail page, `Select` for profile selection), or several actions. Record the exact ordered list; it may be empty. Test by running:
+5. **Post-Launch Key** — After launching, does the channel need a keypress to start playback (`Play` for a content detail page, `Select` for profile selection), or do the launch params start playback directly (launch-only, no key — like Emby's `Command=PlayNow`)? Test by running:
    ```
    curl -X POST "http://{roku_ip}:8060/launch/{channel_id}?contentId={id}&mediaType=movie"
    ```
@@ -429,14 +437,14 @@ Any implementation must expose exactly these two functions:
 ### `convert_url_to_ecp_command(url: string) -> dict | null`
 
 - Accepts a single URL string
-- Returns an extraction result dict with fields: `channel_id`, `channel_name`, `content_id`, `media_type`
+- Returns an extraction result dict with fields: `channel_id`, `channel_name`, `content_id`, `media_type`, `post_launch_key`
 - Returns `null`/`None`/`nil` if the URL does not match any supported URL channel
 - Must use `search` (not `match`) regex semantics — the pattern can appear anywhere in the URL
 
 ### `build_playback_command(descriptor: dict) -> dict`
 
 - Accepts a content descriptor (the output of `convert_url_to_ecp_command`, or a caller-supplied descriptor for a non-URL channel)
-- Returns a playback command dict with fields: `type` (always `"action_sequence"`), `actions` (a `launch` followed by the channel's post-launch actions, which may be none)
+- Returns a playback command dict with fields: `type` (always `"action_sequence"`), `actions` (a `launch`, then a `wait` + `keypress` when the descriptor has a `post_launch_key`, else just the `launch`)
 - Launch `params` follow the channel's catalog rule
 
 ---
@@ -446,4 +454,4 @@ Any implementation must expose exactly these two functions:
 See `test_fixtures.json` for a complete set of test cases:
 - **12 valid URLs** covering all channels and edge cases (with/without www, query params, legacy domains)
 - **11 invalid URLs** that should return null (browse pages, root pages, search pages, unsupported services)
-- **6 playback command cases**: the four public channels (wait + keypress) and Emby (launch-only, with and without a resume position)
+- **6 playback command cases**: URL channels (wait + keypress) and Emby (launch-only, with and without a resume position)
