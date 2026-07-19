@@ -10,7 +10,7 @@ Ask the user these questions:
 
 2. **What is the IP address of your Roku device?** (Found in Roku Settings > Network > About. Example: `192.168.1.100`)
 
-3. **Which channels do you want to support?** (Netflix, Disney+, HBO Max / Max, Prime Video — addressed by URL — and/or Emby, a self-hosted server addressed by descriptor; only include channels the user has)
+3. **Which channels do you want to support?** (Netflix, Disney+, HBO Max / Max, Prime Video, Hulu, Apple TV+ — addressed by URL — and/or Emby, a self-hosted server addressed by descriptor; only include channels the user has)
 
 ## What to Build
 

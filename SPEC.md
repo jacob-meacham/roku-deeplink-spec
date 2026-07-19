@@ -6,7 +6,7 @@ A complete specification for converting public streaming service URLs into Roku 
 
 ## 1. Problem Statement
 
-**Input:** A URL string from a public streaming service (Netflix, Disney+, HBO Max, or Prime Video).
+**Input:** A URL string from a public streaming service (Netflix, Disney+, HBO Max, Prime Video, Hulu, or Apple TV+).
 
 **Output:** A structured playback command that, when executed against a Roku device, launches the correct streaming app and starts playing the content. Returns `null`/`None` if the URL does not match any supported channel.
 
@@ -114,15 +114,15 @@ The command is `[launch]`, followed by `[wait 2000ms, keypress]` when the descri
 
 Each supported channel is defined by these properties:
 
-| Property | Netflix | Disney+ | HBO Max | Prime Video |
-|----------|---------|---------|---------|-------------|
-| **Channel ID** | `12` | `291097` | `61322` | `13` |
-| **Channel Name** | `Netflix` | `Disney+` | `HBO Max` | `Prime Video` |
-| **URL Regex** | `netflix\.com/(?:watch\|title)/(\d+)` | `disneyplus\.com/(?:(?:play|video)/|browse/entity-)([a-f0-9-]+)` | `(?:max\.com|hbomax\.com)/(?:(?:movies|series)/[^/]+/|(?:video/watch|play)/)([^/?]+)` | `(?:amazon\.com\|primevideo\.com)/.*?/([B][A-Z0-9]{9})` |
-| **Content ID Format** | Numeric digits | UUID (hex + hyphens) | Alphanumeric + hyphens | ASIN (B + 9 alphanumeric) |
-| **Media Type Logic** | `/watch/` in URL = `"movie"`, `/title/` in URL = `"series"` | Always `"movie"` | Always `"movie"` | Always `"movie"` |
-| **Post-Launch Key** | `Play` | `Select` | `Select` | `Select` |
-| **Public Domain(s)** | `netflix.com` | `disneyplus.com` | `max.com`, `hbomax.com` | `amazon.com`, `primevideo.com` |
+| Property | Netflix | Disney+ | HBO Max | Prime Video | Hulu | Apple TV+ |
+|----------|---------|---------|---------|-------------|------|-----------|
+| **Channel ID** | `12` | `291097` | `61322` | `13` | `2285` | `551012` |
+| **Channel Name** | `Netflix` | `Disney+` | `HBO Max` | `Prime Video` | `Hulu` | `Apple TV+` |
+| **URL Regex** | `netflix\.com/(?:watch\|title)/(\d+)` | `disneyplus\.com/(?:(?:play|video)/|browse/entity-)([a-f0-9-]+)` | `(?:max\.com|hbomax\.com)/(?:(?:movies|series)/[^/]+/|(?:video/watch|play)/)([^/?]+)` | `(?:amazon\.com\|primevideo\.com)/.*?/([B][A-Z0-9]{9})` | `hulu\.com/(?:series\|watch\|movie)/(?:[a-z0-9-]+-)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})` | `tv\.apple\.com/(?:\w{2}/)?(?:show\|movie\|episode)/[^/]+/(umc\.cmc\.[a-z0-9]+)` |
+| **Content ID Format** | Numeric digits | UUID (hex + hyphens) | Alphanumeric + hyphens | ASIN (B + 9 alphanumeric) | UUID (hex + hyphens) | `umc.cmc.` + alphanumeric |
+| **Media Type Logic** | `/watch/` in URL = `"movie"`, `/title/` in URL = `"series"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` |
+| **Post-Launch Key** | `Play` | `Select` | `Select` | `Select` | `Select` | `Select` |
+| **Public Domain(s)** | `netflix.com` | `disneyplus.com` | `max.com`, `hbomax.com` | `amazon.com`, `primevideo.com` | `hulu.com` | `tv.apple.com` |
 
 Emby (channel `44191`) is addressed by content descriptor rather than URL, and is launch-only (no post-launch key) — see its entry below.
 
@@ -173,6 +173,28 @@ Emby (channel `44191`) is addressed by content descriptor rather than URL, and i
   - `https://www.amazon.com/gp/video/detail/B0DKTFF815` → content_id=`B0DKTFF815`, media_type=`movie`
   - `https://amazon.com/dp/B0FQM41JFJ/ref=xyz` → content_id=`B0FQM41JFJ`, media_type=`movie`
   - `https://www.primevideo.com/detail/B0EXAMPL12` → content_id=`B0EXAMPL12`, media_type=`movie`
+
+#### Hulu (Channel ID: 2285)
+
+- **URL regex:** `hulu\.com/(?:series|watch|movie)/(?:[a-z0-9-]+-)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`
+- Matches `/series/`, `/watch/`, and `/movie/` paths; an optional human-readable slug prefix (e.g. `the-bear-`) is skipped, capturing only the trailing UUID
+- Content IDs are lowercase-hex UUIDs (e.g., `565d8976-9e52-4f30-a6f5-a47e7fe1abd4`)
+- **Media type:** Always `"movie"`
+- **Post-launch key:** `Select` — press Select once the app loads to begin playback
+- **Example URLs:**
+  - `https://www.hulu.com/series/the-bear-565d8976-9e52-4f30-a6f5-a47e7fe1abd4` → content_id=`565d8976-9e52-4f30-a6f5-a47e7fe1abd4`, media_type=`movie`
+  - `https://www.hulu.com/watch/565d8976-9e52-4f30-a6f5-a47e7fe1abd4` → content_id=`565d8976-9e52-4f30-a6f5-a47e7fe1abd4`, media_type=`movie`
+
+#### Apple TV+ (Channel ID: 551012)
+
+- **URL regex:** `tv\.apple\.com/(?:\w{2}/)?(?:show|movie|episode)/[^/]+/(umc\.cmc\.[a-z0-9]+)`
+- Matches `/show/`, `/movie/`, and `/episode/` paths, with an optional two-letter region segment (e.g. `/us/`) before the type
+- Content IDs are Apple `umc.cmc.` identifiers followed by lowercase alphanumerics (e.g., `umc.cmc.1srk2goyh2q2zdxcx605w8vtx`)
+- **Media type:** Always `"movie"`
+- **Post-launch key:** `Select` — press Select once the app loads to begin playback
+- **Example URLs:**
+  - `https://tv.apple.com/us/show/severance/umc.cmc.1srk2goyh2q2zdxcx605w8vtx` → content_id=`umc.cmc.1srk2goyh2q2zdxcx605w8vtx`, media_type=`movie`
+  - `https://tv.apple.com/movie/killers-of-the-flower-moon/umc.cmc.5x1fg9gl9mwn7qzd3s6ztph5p` → content_id=`umc.cmc.5x1fg9gl9mwn7qzd3s6ztph5p`, media_type=`movie`
 
 #### Emby (Channel ID: 44191)
 
@@ -400,7 +422,7 @@ Before implementing, gather these from the user:
 
 1. **Roku device IP address** — Required to construct ECP URLs. The Roku must be on the same local network. Users can find this in Roku Settings > Network > About.
 
-2. **Which channels do you want?** — Determines which channels to include. Options: Netflix, Disney+, HBO Max (Max), Prime Video (all addressed by URL), and/or Emby (a self-hosted server, addressed by descriptor). Only include channels the user actually has.
+2. **Which channels do you want?** — Determines which channels to include. Options: Netflix, Disney+, HBO Max (Max), Prime Video, Hulu, Apple TV+ (all addressed by URL), and/or Emby (a self-hosted server, addressed by descriptor). Only include channels the user actually has.
 
 3. **Do you need the full playback command or just URL extraction?** — Some use cases only need to identify the channel and content ID from a URL, without generating the full ECP action sequence.
 
@@ -452,6 +474,6 @@ Any implementation must expose exactly these two functions:
 ## 10. Test Fixtures
 
 See `test_fixtures.json` for a complete set of test cases:
-- **12 valid URLs** covering all channels and edge cases (with/without www, query params, legacy domains)
+- **16 valid URLs** covering all channels and edge cases (with/without www, query params, legacy domains)
 - **11 invalid URLs** that should return null (browse pages, root pages, search pages, unsupported services)
-- **6 playback command cases**: URL channels (wait + keypress) and Emby (launch-only, with and without a resume position)
+- **8 playback command cases**: URL channels (wait + keypress) and Emby (launch-only, with and without a resume position)
