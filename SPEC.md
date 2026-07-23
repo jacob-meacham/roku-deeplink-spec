@@ -118,9 +118,9 @@ Each supported channel is defined by these properties:
 |----------|---------|---------|---------|-------------|------|-----------|
 | **Channel ID** | `12` | `291097` | `61322` | `13` | `2285` | `551012` |
 | **Channel Name** | `Netflix` | `Disney+` | `HBO Max` | `Prime Video` | `Hulu` | `Apple TV+` |
-| **URL Regex** | `netflix\.com/(?:watch\|title)/(\d+)` | `disneyplus\.com/(?:(?:play|video)/|browse/entity-)([a-f0-9-]+)` | `(?:max\.com|hbomax\.com)/(?:(?:movies|series)/[^/]+/|(?:video/watch|play)/)([^/?]+)` | `(?:amazon\.com\|primevideo\.com)/.*?/([B][A-Z0-9]{9})` | `hulu\.com/(?:series\|watch\|movie)/(?:[a-z0-9-]+-)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})` | `tv\.apple\.com/(?:\w{2}/)?(?:show\|movie\|episode)/[^/]+/(umc\.cmc\.[a-z0-9]+)` |
+| **URL Regex** | `netflix\.com/(?:\w{2}(?:-\w{2})?/)?(?:watch\|title)/(\d+)` | `disneyplus\.com/(?:(?:play|video)/|browse/entity-)([a-f0-9-]+)` | `(?:max\.com|hbomax\.com)/(?:(?:movies|series)/[^/]+/|(?:video/watch|play)/)([^/?]+)` | `(?:amazon\.com\|primevideo\.com)/.*?/([B][A-Z0-9]{9})` | `hulu\.com/(?:series\|watch\|movie)/(?:[a-z0-9-]+-)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})` | `tv\.apple\.com/(?:\w{2}/)?(?:show\|movie\|episode)/[^/]+/(umc\.cmc\.[a-z0-9]+)` |
 | **Content ID Format** | Numeric digits | UUID (hex + hyphens) | Alphanumeric + hyphens | ASIN (B + 9 alphanumeric) | UUID (hex + hyphens) | `umc.cmc.` + alphanumeric |
-| **Media Type Logic** | `/watch/` in URL = `"movie"`, `/title/` in URL = `"series"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` |
+| **Media Type Logic** | `/watch/` in matched text = `"movie"`, `/title/` in matched text = `"series"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` |
 | **Post-Launch Key** | `Play` | `Select` | `Select` | `Select` | `Select` | `Select` |
 | **Public Domain(s)** | `netflix.com` | `disneyplus.com` | `max.com`, `hbomax.com` | `amazon.com`, `primevideo.com` | `hulu.com` | `tv.apple.com` |
 
@@ -130,13 +130,17 @@ Emby (channel `44191`) is addressed by content descriptor rather than URL, and i
 
 #### Netflix (Channel ID: 12)
 
-- **URL regex:** `netflix\.com/(?:watch|title)/(\d+)`
+- **URL regex:** `netflix\.com/(?:\w{2}(?:-\w{2})?/)?(?:watch|title)/(\d+)`
 - Captures a numeric content ID from either `/watch/{id}` or `/title/{id}` paths
-- **Media type detection:** If the URL contains `/watch/`, the media type is `"movie"`. If it contains `/title/`, the media type is `"series"`. This is the only channel with non-trivial media type logic.
+- An optional locale segment may precede the path type: two letters (`/us/`) or two-letter pairs (`/en-gb/`). Locale-prefixed URLs are common in search engine results.
+- **Media type detection:** Examine the **matched text** (regex capture group 0), not the full URL: if the match contains `/watch/`, the media type is `"movie"`; if it contains `/title/`, it is `"series"`. Exactly one of the two appears in any match, so this is deterministic even when the rest of the URL (e.g. a query parameter) mentions the other segment. This is the only channel with non-trivial media type logic.
 - **Post-launch key:** `Play` — Netflix shows a content detail page; pressing Play starts playback
 - **Example URLs:**
   - `https://www.netflix.com/watch/81444554` → content_id=`81444554`, media_type=`movie`
   - `https://www.netflix.com/title/80179766` → content_id=`80179766`, media_type=`series`
+  - `https://www.netflix.com/us/title/80179766` → content_id=`80179766`, media_type=`series`
+  - `https://netflix.com/en-gb/watch/81444554` → content_id=`81444554`, media_type=`movie`
+  - `https://www.netflix.com/watch/81444554?next=/title/80179766` → content_id=`81444554`, media_type=`movie` (the `/title/` in the query string is outside the matched text)
 
 #### Disney+ (Channel ID: 291097)
 
@@ -214,7 +218,7 @@ function convert_url_to_ecp_command(url):
         match = regex_search(channel.url_pattern, url)
         if match:
             content_id = match.capture_group(1)
-            media_type = channel.determine_media_type(url)
+            media_type = channel.determine_media_type(match.matched_text)
             return {
                 channel_id:      channel.channel_id,
                 channel_name:    channel.channel_name,
@@ -228,7 +232,7 @@ function convert_url_to_ecp_command(url):
 **Important:** Use `search` semantics (find pattern anywhere in string), not `match` semantics (match from start of string). The regex patterns do not anchor to the start of the URL.
 
 **Media type determination** is channel-specific:
-- Netflix: Check if URL contains `/watch/` (return `"movie"`) or `/title/` (return `"series"`)
+- Netflix: Check the **matched text** (the substring the regex matched, i.e. capture group 0 — not the full URL) for `/watch/` (return `"movie"`) or `/title/` (return `"series"`). Exactly one appears in any match; checking the full URL instead is wrong, because the other segment can appear elsewhere (e.g. in a query parameter).
 - All other channels: Always return `"movie"`
 
 ### Step 2: Build Playback Command
@@ -257,10 +261,10 @@ function build_playback_command(descriptor):
 Input:  "https://www.netflix.com/watch/81444554"
 
 Step 1 - URL Extraction:
-  Regex: netflix\.com/(?:watch|title)/(\d+)
+  Regex: netflix\.com/(?:\w{2}(?:-\w{2})?/)?(?:watch|title)/(\d+)
   Match: "netflix.com/watch/81444554"
   Capture group 1: "81444554"
-  URL contains "/watch/" → media_type = "movie"
+  Matched text contains "/watch/" → media_type = "movie"
 
   Result: {
     channel_id: "12",
@@ -294,7 +298,7 @@ Input:  "https://www.netflix.com/title/80179766"
 Step 1 - URL Extraction:
   Regex match: "netflix.com/title/80179766"
   Capture group 1: "80179766"
-  URL contains "/title/" → media_type = "series"
+  Matched text contains "/title/" → media_type = "series"
 
   Result: {
     channel_id: "12",
@@ -388,7 +392,7 @@ Step 1 - URL Extraction:
 Input:  "https://netflix.com/browse"
 
 Step 1 - URL Extraction:
-  Netflix regex: netflix\.com/(?:watch|title)/(\d+) — no match (no /watch/ or /title/ path)
+  Netflix regex: netflix\.com/(?:\w{2}(?:-\w{2})?/)?(?:watch|title)/(\d+) — no match (no /watch/ or /title/ path)
   Disney+ regex: no match (wrong domain)
   HBO Max regex: no match (wrong domain)
   Prime Video regex: no match (wrong domain)
@@ -474,6 +478,6 @@ Any implementation must expose exactly these two functions:
 ## 10. Test Fixtures
 
 See `test_fixtures.json` for a complete set of test cases:
-- **16 valid URLs** covering all channels and edge cases (with/without www, query params, legacy domains)
-- **11 invalid URLs** that should return null (browse pages, root pages, search pages, unsupported services)
+- **20 valid URLs** covering all channels and edge cases (with/without www, query params, legacy domains, Netflix locale prefixes, media-type adversarial cases)
+- **12 invalid URLs** that should return null (browse pages, root pages, search pages, unsupported services)
 - **8 playback command cases**: URL channels (wait + keypress) and Emby (launch-only, with and without a resume position)

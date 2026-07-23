@@ -8,7 +8,7 @@ In your favorite LLM, just say "@PROMPT.md"
 
 ## What This Is
 
-This directory contains a natural language specification ([SPEC.md](SPEC.md)) detailed enough for an LLM to implement the URL-to-ECP conversion feature in any programming language from a single read. A Python reference implementation and test harness validate correctness.
+This directory contains a natural language specification ([SPEC.md](SPEC.md)) detailed enough for an LLM to implement the URL-to-ECP conversion feature in any programming language from a single read. The canonical test fixtures (`test_fixtures.json`) validate correctness of any generated implementation.
 
 ## Files
 
@@ -19,14 +19,11 @@ This directory contains a natural language specification ([SPEC.md](SPEC.md)) de
 | `test_fixtures.json` | All test cases as structured JSON |
 
 
-## Running Tests
-
 ## Validating a Generated Implementation
 
 To test your own implementation against the fixtures:
 
 1. Implement two functions matching the contract in SPEC.md Section 9
-2. Update the import in `test_reference.py` to point to your module
-3. Run `pytest test_reference.py -v`
+2. Run every case in `test_fixtures.json` against them (speclib consumers get the fixtures materialized into their test suite at sync time)
 
-All 29 tests must pass (12 valid URLs + 11 invalid URLs + 6 playback commands).
+All 40 cases must pass (20 valid URLs + 12 invalid URLs + 8 playback commands).

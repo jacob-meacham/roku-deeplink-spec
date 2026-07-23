@@ -25,13 +25,13 @@ The spec contains the complete channel catalog (regex patterns, channel IDs, med
 ## Validation
 
 Test fixtures are in test_fixtures.json in this directory. Run your implementation against all test cases:
-- 12 valid URLs that must return correct extraction results
-- 11 invalid URLs that must return null
-- 6 playback command cases that must produce the correct action sequence (incl. Emby, launch-only)
+- 20 valid URLs that must return correct extraction results
+- 12 invalid URLs that must return null
+- 8 playback command cases that must produce the correct action sequence (incl. Emby, launch-only)
 
 ## Key Things to Get Right
 
 - Use regex **search** (find anywhere in string), not match-from-start
-- Netflix is the only channel with non-trivial media type logic: `/watch/` = movie, `/title/` = series. All other URL channels always return "movie".
+- Netflix is the only channel with non-trivial media type logic: `/watch/` = movie, `/title/` = series — decided from the regex **matched text**, not the full URL (a query string elsewhere in the URL may mention the other segment). Netflix URLs may carry an optional locale prefix (`/us/`, `/en-gb/`). All other URL channels always return "movie".
 - Launch params are per-channel: `contentId={id}&mediaType={type}` for URL channels, `Command=PlayNow&ItemIds={id}` for Emby — no URL encoding needed
 - Post-launch is driven by the extraction's `post_launch_key`: when present, the command is launch → wait 2000ms → keypress that key; a launch-only channel (Emby, no key) is just the launch. Netflix uses `Play`; the other URL channels use `Select`.
