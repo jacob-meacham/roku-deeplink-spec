@@ -118,7 +118,7 @@ Each supported channel is defined by these properties:
 |----------|---------|---------|---------|-------------|------|-----------|---------|
 | **Channel ID** | `12` | `291097` | `61322` | `13` | `2285` | `551012` | `837` |
 | **Channel Name** | `Netflix` | `Disney+` | `HBO Max` | `Prime Video` | `Hulu` | `Apple TV+` | `YouTube` |
-| **URL Regex** | `netflix\.com/(?:\w{2}(?:-\w{2})?/)?(?:watch\|title)/(\d+)` | `disneyplus\.com/(?:(?:play|video)/|browse/entity-)([a-f0-9-]+)` | `(?:max\.com|hbomax\.com)/(?:(?:movies|series)/[^/]+/|(?:video/watch|play)/)([^/?]+)` | `(?:amazon\.com\|primevideo\.com)/.*?/([B][A-Z0-9]{9})` | `hulu\.com/(?:series\|watch\|movie)/(?:[a-z0-9-]+-)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})` | `tv\.apple\.com/(?:\w{2}/)?(?:show\|movie\|episode)/[^/]+/(umc\.cmc\.[a-z0-9]+)` | `(?:youtube\.com/watch\?(?:[^#\s]*&)?v=\|youtu\.be/)([A-Za-z0-9_-]{11})` |
+| **URL Regex** | `netflix\.com/(?:\w{2}(?:-\w{2})?/)?(?:watch\|title)/(\d+)` | `disneyplus\.com/(?:(?:play|video)/|browse/entity-)([a-f0-9-]+)` | `(?:max\.com|hbomax\.com)/(?:(?:movies|series|shows)/[^/]+/(?:s\d+/)?|(?:video/watch|play)/)([^/?]+)` | `(?:amazon\.com\|primevideo\.com)/.*?/([B][A-Z0-9]{9})` | `hulu\.com/(?:series\|watch\|movie)/(?:[a-z0-9-]+-)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})` | `tv\.apple\.com/(?:\w{2}/)?(?:show\|movie\|episode)/[^/]+/(umc\.cmc\.[a-z0-9]+)` | `(?:youtube\.com/watch\?(?:[^#\s]*&)?v=\|youtu\.be/)([A-Za-z0-9_-]{11})` |
 | **Content ID Format** | Numeric digits | UUID (hex + hyphens) | Alphanumeric + hyphens | ASIN (B + 9 alphanumeric) | UUID (hex + hyphens) | `umc.cmc.` + alphanumeric | 11 chars: letters, digits, `-`, `_` |
 | **Media Type Logic** | `/watch/` in matched text = `"movie"`, `/title/` in matched text = `"series"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` |
 | **Post-Launch Key** | `Play` | `Select` | `Select` | `Select` | `Select` | `Select` | none (launch-only) |
@@ -154,9 +154,10 @@ Emby (channel `44191`) is addressed by content descriptor rather than URL, and i
 
 #### HBO Max (Channel ID: 61322)
 
-- **URL regex:** `(?:max\.com|hbomax\.com)/(?:(?:movies|series)/[^/]+/|(?:video/watch|play)/)([^/?]+)`
+- **URL regex:** `(?:max\.com|hbomax\.com)/(?:(?:movies|series|shows)/[^/]+/(?:s\d+/)?|(?:video/watch|play)/)([^/?]+)`
 - Matches both `max.com` (current domain) and `hbomax.com` (legacy domain)
-- Captures content ID from `/movies/{slug}/{id}`, `/series/{slug}/{id}`, `/video/watch/{id}`, or `/play/{id}` paths
+- Captures content ID from `/movies/{slug}/{id}`, `/series/{slug}/{id}`, `/shows/{slug}/{id}`, `/video/watch/{id}`, or `/play/{id}` paths
+- `/shows/` is the current site's URL scheme. An optional season segment (`s1/`, `s2/`, …) may sit between the slug and the ID — the same show UUID appears on show pages (`/shows/white-lotus/{uuid}`), episode pages (`/shows/white-lotus/s1/{uuid}/e1-arrivals/28`), and sub-pages (`/shows/white-lotus/{uuid}/cast-and-crew`)
 - Content ID stops at the first `/` or `?` character (captured by `[^/?]+`)
 - **Important:** For URLs like `/video/watch/{id1}/{id2}`, only the first ID is captured. Do NOT use `/movie/{id}` URLs — those IDs don't work for deep linking.
 - **Media type:** Always `"movie"`
@@ -164,6 +165,7 @@ Emby (channel `44191`) is addressed by content descriptor rather than URL, and i
 - **Example URLs:**
   - `https://www.max.com/video/watch/bd43b2a4-1639-4197-96d4-2ec14eb45e9e` → content_id=`bd43b2a4-1639-4197-96d4-2ec14eb45e9e`, media_type=`movie`
   - `https://www.hbomax.com/video/watch/legacy-id` → content_id=`legacy-id`, media_type=`movie`
+  - `https://www.hbomax.com/shows/white-lotus/14f9834d-bc23-41a8-ab61-5c8abdbea505` → content_id=`14f9834d-bc23-41a8-ab61-5c8abdbea505`, media_type=`movie`
 
 #### Prime Video (Channel ID: 13)
 
@@ -177,6 +179,16 @@ Emby (channel `44191`) is addressed by content descriptor rather than URL, and i
   - `https://www.amazon.com/gp/video/detail/B0DKTFF815` → content_id=`B0DKTFF815`, media_type=`movie`
   - `https://amazon.com/dp/B0FQM41JFJ/ref=xyz` → content_id=`B0FQM41JFJ`, media_type=`movie`
   - `https://www.primevideo.com/detail/B0EXAMPL12` → content_id=`B0EXAMPL12`, media_type=`movie`
+- **Content ID verification (recommended for search-sourced URLs):** Every Amazon retail product (DVDs, Blu-rays, soundtracks) also has an ASIN, and retail and video pages share the `/dp/{ASIN}` URL shape — extraction alone cannot tell them apart. When the URL came from an untrusted source such as web search results, verify the ASIN with an unauthenticated probe (following redirects):
+
+  ```
+  GET https://www.primevideo.com/detail/{content_id}
+    200         → ASIN is a Prime Video title  → accept
+    404         → ASIN is not a video (retail) → reject
+    other / err → indeterminate                → fail open (accept, log)
+  ```
+
+  The probe is only needed for ambiguous paths: `/gp/video/` paths on amazon.com and all primevideo.com paths are inherently video pages and skip it. Extraction (`convert_url_to_ecp_command`) stays pure — verification is a separate, optional step. See §11 for how search-sourcing consumers should handle a rejected candidate.
 
 #### Hulu (Channel ID: 2285)
 
@@ -525,6 +537,40 @@ Any implementation must expose exactly these two functions:
 ## 10. Test Fixtures
 
 See `test_fixtures.json` for a complete set of test cases:
-- **24 valid URLs** covering all channels and edge cases (with/without www, query params, legacy domains, Netflix locale prefixes, media-type adversarial cases, YouTube query-param capture)
-- **15 invalid URLs** that should return null (browse pages, root pages, search pages, malformed video IDs, unsupported services)
+- **27 valid URLs** covering all channels and edge cases (with/without www, query params, legacy domains, Netflix locale prefixes, media-type adversarial cases, YouTube query-param capture, HBO Max `/shows/` pages)
+- **16 invalid URLs** that should return null (browse pages, root pages, search pages, malformed video IDs, unsupported services)
 - **9 playback command cases**: URL channels (wait + keypress), YouTube (launch-only from a URL extraction), and Emby (launch-only descriptor, with and without a resume position)
+
+Verification probes (§4 Prime Video, §11) are live HTTP calls and are not fixture-testable; fixtures cover extraction and playback-command construction only.
+
+---
+
+## 11. Sourcing URLs from Web Search (Consumer Guidance)
+
+This section is for consumers that *discover* deep-linkable URLs by feeding a content title into a web search API (e.g. Brave Search), rather than receiving a known-good URL. Consumers that only convert caller-supplied URLs can ignore it entirely.
+
+### Query Shaping
+
+Build the query as:
+
+```
+watch {title} site:{domain1} OR site:{domain2} OR ...
+```
+
+with one `site:` clause per public domain of each active channel (see the catalog). The leading `watch` keyword matters: bare-title queries rank retail pages (e.g. an Amazon DVD listing) and placeholder pages above actual streaming pages; the `watch` prefix reliably inverts that ordering without hurting queries that were already good.
+
+### Candidate Handling
+
+Iterate the ranked results, extracting a candidate per channel with `convert_url_to_ecp_command`. Two rules:
+
+1. **Verify ambiguous candidates** before accepting them (today only Prime Video defines a verification probe — see its catalog entry).
+2. **A rejected candidate MUST NOT satisfy or block its channel.** Keep scanning lower-ranked results so a later legitimate candidate can still claim that channel. (The failure this prevents: a DVD product page outranks the real Prime Video page; first-match-wins would lock the channel to the unplayable retail ASIN.)
+
+### Ranking Hint (Optional)
+
+Search result *titles* distinguish Amazon streaming pages ("Watch {title} | Prime Video") from retail pages ("Amazon.com: {title} : ..."). This may be used to prefer candidates before probing, but never as sole grounds for rejection — the probe is the authoritative check.
+
+### Known Limitations
+
+- **Netflix placeholders:** netflix.com serves `/title/{id}` pages for catalog titles it cannot currently stream (e.g. DVD-era entries). These match the Netflix regex, and no URL-level or cheap unauthenticated HTTP discriminator is known — placeholder and playable pages both return 200 with equivalent markers. A deep link to one opens Netflix but cannot play.
+- **primevideo.com GTI URLs:** primevideo.com results often use slug + GTI paths (`/detail/{slug}/{GTI}`) that carry no ASIN and therefore do not match. This is expected — the deep-linkable ASIN typically surfaces on an amazon.com `/dp/` result for the same title.
