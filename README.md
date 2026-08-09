@@ -26,4 +26,4 @@ To test your own implementation against the fixtures:
 1. Implement two functions matching the contract in SPEC.md Section 9
 2. Run every case in `test_fixtures.json` against them (speclib consumers get the fixtures materialized into their test suite at sync time)
 
-All 40 cases must pass (20 valid URLs + 12 invalid URLs + 8 playback commands).
+All 48 cases must pass (24 valid URLs + 15 invalid URLs + 9 playback commands).

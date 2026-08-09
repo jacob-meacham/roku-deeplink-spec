@@ -6,7 +6,7 @@ A complete specification for converting public streaming service URLs into Roku 
 
 ## 1. Problem Statement
 
-**Input:** A URL string from a public streaming service (Netflix, Disney+, HBO Max, Prime Video, Hulu, or Apple TV+).
+**Input:** A URL string from a public streaming service (Netflix, Disney+, HBO Max, Prime Video, Hulu, Apple TV+, or YouTube).
 
 **Output:** A structured playback command that, when executed against a Roku device, launches the correct streaming app and starts playing the content. Returns `null`/`None` if the URL does not match any supported channel.
 
@@ -78,13 +78,13 @@ Takes a URL string. Returns an extraction result dict if the URL matches a suppo
 | `channel_name` | string | Human-readable channel name |
 | `content_id` | string | Content identifier extracted from the URL |
 | `media_type` | string | One of: `"movie"`, `"series"` |
-| `post_launch_key` | string | Key to press after launch: `"Play"` or `"Select"` |
+| `post_launch_key` | string (optional) | Key to press after launch: `"Play"` or `"Select"`. **Absent** for launch-only channels (e.g. YouTube), whose deep link starts playback with no keypress |
 
-This extraction result is one kind of **content descriptor**. Channels not addressed by URL (e.g. Emby) are never produced by Function 1 — the caller supplies their descriptor. Its `post_launch_key` may be absent for launch-only channels like Emby, plus optional channel-specific fields like `resume_position_ticks`.
+This extraction result is one kind of **content descriptor**. Channels not addressed by URL (e.g. Emby) are never produced by Function 1 — the caller supplies their descriptor. A descriptor's `post_launch_key` is likewise absent for launch-only channels like Emby, and it may carry optional channel-specific fields like `resume_position_ticks`.
 
 ### Function 2: `build_playback_command(descriptor) -> playback_command`
 
-Takes a content descriptor. Returns a playback command: a `launch` action, then — if the descriptor has a `post_launch_key` — a `wait` and a `keypress`. Launch-only channels (no `post_launch_key`, e.g. Emby) return just the `launch`.
+Takes a content descriptor. Returns a playback command: a `launch` action, then — if the descriptor has a `post_launch_key` — a `wait` and a `keypress`. Launch-only channels (no `post_launch_key`, e.g. YouTube, Emby) return just the `launch`.
 
 **Playback Command:**
 ```json
@@ -106,7 +106,7 @@ Takes a content descriptor. Returns a playback command: a `launch` action, then 
 | `wait` | `milliseconds` | Delay before the next action |
 | `keypress` | `key`, `count` | Press a remote key `count` times (`count` ≥ 1) |
 
-The command is `[launch]`, followed by `[wait 2000ms, keypress]` when the descriptor carries a `post_launch_key`, or nothing for a launch-only channel like Emby. Launch `params` are channel-specific (see the catalog); most channels use `contentId={content_id}&mediaType={media_type}`.
+The command is `[launch]`, followed by `[wait 2000ms, keypress]` when the descriptor carries a `post_launch_key`, or nothing for a launch-only channel like YouTube or Emby. Launch `params` are channel-specific (see the catalog); most channels use `contentId={content_id}&mediaType={media_type}`.
 
 ---
 
@@ -114,15 +114,15 @@ The command is `[launch]`, followed by `[wait 2000ms, keypress]` when the descri
 
 Each supported channel is defined by these properties:
 
-| Property | Netflix | Disney+ | HBO Max | Prime Video | Hulu | Apple TV+ |
-|----------|---------|---------|---------|-------------|------|-----------|
-| **Channel ID** | `12` | `291097` | `61322` | `13` | `2285` | `551012` |
-| **Channel Name** | `Netflix` | `Disney+` | `HBO Max` | `Prime Video` | `Hulu` | `Apple TV+` |
-| **URL Regex** | `netflix\.com/(?:\w{2}(?:-\w{2})?/)?(?:watch\|title)/(\d+)` | `disneyplus\.com/(?:(?:play|video)/|browse/entity-)([a-f0-9-]+)` | `(?:max\.com|hbomax\.com)/(?:(?:movies|series)/[^/]+/|(?:video/watch|play)/)([^/?]+)` | `(?:amazon\.com\|primevideo\.com)/.*?/([B][A-Z0-9]{9})` | `hulu\.com/(?:series\|watch\|movie)/(?:[a-z0-9-]+-)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})` | `tv\.apple\.com/(?:\w{2}/)?(?:show\|movie\|episode)/[^/]+/(umc\.cmc\.[a-z0-9]+)` |
-| **Content ID Format** | Numeric digits | UUID (hex + hyphens) | Alphanumeric + hyphens | ASIN (B + 9 alphanumeric) | UUID (hex + hyphens) | `umc.cmc.` + alphanumeric |
-| **Media Type Logic** | `/watch/` in matched text = `"movie"`, `/title/` in matched text = `"series"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` |
-| **Post-Launch Key** | `Play` | `Select` | `Select` | `Select` | `Select` | `Select` |
-| **Public Domain(s)** | `netflix.com` | `disneyplus.com` | `max.com`, `hbomax.com` | `amazon.com`, `primevideo.com` | `hulu.com` | `tv.apple.com` |
+| Property | Netflix | Disney+ | HBO Max | Prime Video | Hulu | Apple TV+ | YouTube |
+|----------|---------|---------|---------|-------------|------|-----------|---------|
+| **Channel ID** | `12` | `291097` | `61322` | `13` | `2285` | `551012` | `837` |
+| **Channel Name** | `Netflix` | `Disney+` | `HBO Max` | `Prime Video` | `Hulu` | `Apple TV+` | `YouTube` |
+| **URL Regex** | `netflix\.com/(?:\w{2}(?:-\w{2})?/)?(?:watch\|title)/(\d+)` | `disneyplus\.com/(?:(?:play|video)/|browse/entity-)([a-f0-9-]+)` | `(?:max\.com|hbomax\.com)/(?:(?:movies|series)/[^/]+/|(?:video/watch|play)/)([^/?]+)` | `(?:amazon\.com\|primevideo\.com)/.*?/([B][A-Z0-9]{9})` | `hulu\.com/(?:series\|watch\|movie)/(?:[a-z0-9-]+-)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})` | `tv\.apple\.com/(?:\w{2}/)?(?:show\|movie\|episode)/[^/]+/(umc\.cmc\.[a-z0-9]+)` | `(?:youtube\.com/watch\?(?:[^#\s]*&)?v=\|youtu\.be/)([A-Za-z0-9_-]{11})` |
+| **Content ID Format** | Numeric digits | UUID (hex + hyphens) | Alphanumeric + hyphens | ASIN (B + 9 alphanumeric) | UUID (hex + hyphens) | `umc.cmc.` + alphanumeric | 11 chars: letters, digits, `-`, `_` |
+| **Media Type Logic** | `/watch/` in matched text = `"movie"`, `/title/` in matched text = `"series"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` |
+| **Post-Launch Key** | `Play` | `Select` | `Select` | `Select` | `Select` | `Select` | none (launch-only) |
+| **Public Domain(s)** | `netflix.com` | `disneyplus.com` | `max.com`, `hbomax.com` | `amazon.com`, `primevideo.com` | `hulu.com` | `tv.apple.com` | `youtube.com`, `youtu.be` |
 
 Emby (channel `44191`) is addressed by content descriptor rather than URL, and is launch-only (no post-launch key) — see its entry below.
 
@@ -200,6 +200,19 @@ Emby (channel `44191`) is addressed by content descriptor rather than URL, and i
   - `https://tv.apple.com/us/show/severance/umc.cmc.1srk2goyh2q2zdxcx605w8vtx` → content_id=`umc.cmc.1srk2goyh2q2zdxcx605w8vtx`, media_type=`movie`
   - `https://tv.apple.com/movie/killers-of-the-flower-moon/umc.cmc.5x1fg9gl9mwn7qzd3s6ztph5p` → content_id=`umc.cmc.5x1fg9gl9mwn7qzd3s6ztph5p`, media_type=`movie`
 
+#### YouTube (Channel ID: 837)
+
+- **URL regex:** `(?:youtube\.com/watch\?(?:[^#\s]*&)?v=|youtu\.be/)([A-Za-z0-9_-]{11})`
+- Captures the 11-character video ID from `youtube.com/watch?v={id}` or `youtu.be/{id}`. No shorts, embed, or `m.youtube.com` variants.
+- This is the only channel that captures from a **query parameter** rather than the path. The `(?:[^#\s]*&)?` allows `v` to appear after other params (`watch?app=desktop&v=…`) while refusing to match inside another param name — the segment before `v=` must end in `&`, so `sv=` cannot match.
+- The strict `{11}` ID class (letters, digits, `-`, `_`) is what rejects malformed IDs like `abc123`; `youtu.be` tracking params (`?si=…`) fall outside the capture naturally.
+- **Media type:** Always `"movie"` — YouTube's app ignores `mediaType`, but keeping the standard `contentId={id}&mediaType=movie` params preserves the rule that all URL channels use standard params (only Emby has channel-specific params).
+- **Post-launch key:** none — the deep link auto-plays (confirmed on-device). The extraction result **omits** `post_launch_key`, and the playback command is a single `launch` with no wait/keypress. First launch-only URL channel; previously only descriptor-addressed Emby exercised this path.
+- **Example URLs:**
+  - `https://www.youtube.com/watch?v=dQw4w9WgXcQ` → content_id=`dQw4w9WgXcQ`, media_type=`movie`
+  - `https://youtu.be/dQw4w9WgXcQ` → content_id=`dQw4w9WgXcQ`, media_type=`movie`
+  - `https://www.youtube.com/watch?app=desktop&v=jNQXAC9IVRw` → content_id=`jNQXAC9IVRw`, media_type=`movie`
+
 #### Emby (Channel ID: 44191)
 
 - **Not addressed by public URL** (no `url_pattern`). Emby is a self-hosted media server; content is discovered through the caller's Emby library search (out of scope), which yields an item ID used as `content_id`.
@@ -219,13 +232,15 @@ function convert_url_to_ecp_command(url):
         if match:
             content_id = match.capture_group(1)
             media_type = channel.determine_media_type(match.matched_text)
-            return {
-                channel_id:      channel.channel_id,
-                channel_name:    channel.channel_name,
-                content_id:      content_id,
-                media_type:      media_type,
-                post_launch_key: channel.post_launch_key,
+            result = {
+                channel_id:   channel.channel_id,
+                channel_name: channel.channel_name,
+                content_id:   content_id,
+                media_type:   media_type,
             }
+            if channel.post_launch_key is present:
+                result.post_launch_key = channel.post_launch_key
+            return result
     return null
 ```
 
@@ -386,7 +401,39 @@ Step 1 - URL Extraction:
   }
 ```
 
-### Example 6: No Match
+### Example 6: YouTube (launch-only)
+
+```
+Input:  "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+Step 1 - URL Extraction:
+  Regex: (?:youtube\.com/watch\?(?:[^#\s]*&)?v=|youtu\.be/)([A-Za-z0-9_-]{11})
+  Match: "youtube.com/watch?v=dQw4w9WgXcQ"
+  Capture group 1: "dQw4w9WgXcQ"
+  media_type = "movie" (always for YouTube)
+
+  Result: {
+    channel_id: "837",
+    channel_name: "YouTube",
+    content_id: "dQw4w9WgXcQ",
+    media_type: "movie"
+  }
+  (no post_launch_key — YouTube is launch-only)
+
+Step 2 - Playback Command:
+  {
+    type: "action_sequence",
+    actions: [
+      {type: "launch", channel_id: "837", params: "contentId=dQw4w9WgXcQ&mediaType=movie"}
+    ]
+  }
+
+ECP HTTP calls (given roku_ip = "192.168.1.100"):
+  1. POST http://192.168.1.100:8060/launch/837?contentId=dQw4w9WgXcQ&mediaType=movie
+  (no sleep, no keypress — the deep link auto-plays)
+```
+
+### Example 7: No Match
 
 ```
 Input:  "https://netflix.com/browse"
@@ -400,7 +447,7 @@ Step 1 - URL Extraction:
   Result: null
 ```
 
-### Example 7: Emby (descriptor, launch-only)
+### Example 8: Emby (descriptor, launch-only)
 
 ```
 Input (descriptor from a library search, not a URL):
@@ -426,7 +473,7 @@ Before implementing, gather these from the user:
 
 1. **Roku device IP address** — Required to construct ECP URLs. The Roku must be on the same local network. Users can find this in Roku Settings > Network > About.
 
-2. **Which channels do you want?** — Determines which channels to include. Options: Netflix, Disney+, HBO Max (Max), Prime Video, Hulu, Apple TV+ (all addressed by URL), and/or Emby (a self-hosted server, addressed by descriptor). Only include channels the user actually has.
+2. **Which channels do you want?** — Determines which channels to include. Options: Netflix, Disney+, HBO Max (Max), Prime Video, Hulu, Apple TV+, YouTube (all addressed by URL), and/or Emby (a self-hosted server, addressed by descriptor). Only include channels the user actually has.
 
 3. **Do you need the full playback command or just URL extraction?** — Some use cases only need to identify the channel and content ID from a URL, without generating the full ECP action sequence.
 
@@ -463,7 +510,7 @@ Any implementation must expose exactly these two functions:
 ### `convert_url_to_ecp_command(url: string) -> dict | null`
 
 - Accepts a single URL string
-- Returns an extraction result dict with fields: `channel_id`, `channel_name`, `content_id`, `media_type`, `post_launch_key`
+- Returns an extraction result dict with fields: `channel_id`, `channel_name`, `content_id`, `media_type`, and — only for channels that have one — `post_launch_key` (launch-only channels like YouTube omit it)
 - Returns `null`/`None`/`nil` if the URL does not match any supported URL channel
 - Must use `search` (not `match`) regex semantics — the pattern can appear anywhere in the URL
 
@@ -478,6 +525,6 @@ Any implementation must expose exactly these two functions:
 ## 10. Test Fixtures
 
 See `test_fixtures.json` for a complete set of test cases:
-- **20 valid URLs** covering all channels and edge cases (with/without www, query params, legacy domains, Netflix locale prefixes, media-type adversarial cases)
-- **12 invalid URLs** that should return null (browse pages, root pages, search pages, unsupported services)
-- **8 playback command cases**: URL channels (wait + keypress) and Emby (launch-only, with and without a resume position)
+- **24 valid URLs** covering all channels and edge cases (with/without www, query params, legacy domains, Netflix locale prefixes, media-type adversarial cases, YouTube query-param capture)
+- **15 invalid URLs** that should return null (browse pages, root pages, search pages, malformed video IDs, unsupported services)
+- **9 playback command cases**: URL channels (wait + keypress), YouTube (launch-only from a URL extraction), and Emby (launch-only descriptor, with and without a resume position)
