@@ -25,14 +25,16 @@ The spec contains the complete channel catalog (regex patterns, channel IDs, med
 ## Validation
 
 Test fixtures are in test_fixtures.json in this directory. Run your implementation against all test cases:
-- 27 valid URLs that must return correct extraction results
+- 28 valid URLs that must return correct extraction results
 - 16 invalid URLs that must return null
-- 9 playback command cases that must produce the correct action sequence (incl. the launch-only channels: YouTube and Emby)
+- 9 playback command cases that must produce the correct action sequence (incl. the launch-only channels: YouTube, Apple TV+, and Emby)
 
 ## Key Things to Get Right
 
 - Use regex **search** (find anywhere in string), not match-from-start
-- Netflix is the only channel with non-trivial media type logic: `/watch/` = movie, `/title/` = series — decided from the regex **matched text**, not the full URL (a query string elsewhere in the URL may mention the other segment). Netflix URLs may carry an optional locale prefix (`/us/`, `/en-gb/`). All other URL channels always return "movie".
+- Two channels have non-trivial media type logic, decided from the regex **matched text**, not the full URL (a query string elsewhere in the URL may mention another segment). Netflix: `/watch/` = movie, `/title/` = series (URLs may carry an optional locale prefix like `/us/`, `/en-gb/`). HBO Max: episode pages = "episode" (a second regex, tried first, captures the **last** UUID — the playable video id), `/shows/` or `/series/` = "series", else "movie". All other URL channels always return "movie".
+- An HBO Max "series" capture is a show-entity uuid the Roku app cannot play — search-sourcing consumers must resolve it to an episode uuid (SPEC.md §11 *Max Show-Page Resolution*) before launching.
 - Launch params are per-channel: `contentId={id}&mediaType={type}` for URL channels, `Command=PlayNow&ItemIds={id}` for Emby — no URL encoding needed
-- Post-launch is driven by the extraction's `post_launch_key`: when present, the command is launch → wait 2000ms → keypress that key; a launch-only channel (no key) is just the launch. Netflix uses `Play`; YouTube is **launch-only** — its extraction result omits `post_launch_key`, so no wait and no keypress; the other URL channels use `Select` (Emby, descriptor-addressed, is also launch-only).
-- If your consumer discovers URLs via a web search API (rather than being handed known-good URLs), also read SPEC.md §11: query shaping (`watch` prefix), the Prime Video ASIN verification probe, and the rule that a rejected candidate must not satisfy or block its channel.
+- Post-launch is driven by the extraction's `post_launch_key`: when present, the command is launch → wait 2000ms → keypress that key; a launch-only channel (no key) is just the launch. Netflix uses `Play`; YouTube and Apple TV+ are **launch-only** — their extraction results omit `post_launch_key`, so no wait and no keypress; the other URL channels use `Select` (Emby, descriptor-addressed, is also launch-only).
+- Apple TV+ additionally carries `deep_link: false`: its Roku app ignores deep links entirely (device-verified), so launching only opens the app — surface that to the user.
+- If your consumer discovers URLs via a web search API (rather than being handed known-good URLs), also read SPEC.md §11: query shaping (`watch` prefix), the Prime Video ASIN verification probe, the Max show-page episode resolution, and the rule that a rejected candidate must not satisfy or block its channel.

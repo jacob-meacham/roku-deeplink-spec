@@ -77,8 +77,9 @@ Takes a URL string. Returns an extraction result dict if the URL matches a suppo
 | `channel_id` | string | Roku channel ID (numeric string) |
 | `channel_name` | string | Human-readable channel name |
 | `content_id` | string | Content identifier extracted from the URL |
-| `media_type` | string | One of: `"movie"`, `"series"` |
-| `post_launch_key` | string (optional) | Key to press after launch: `"Play"` or `"Select"`. **Absent** for launch-only channels (e.g. YouTube), whose deep link starts playback with no keypress |
+| `media_type` | string | One of: `"movie"`, `"series"`, `"episode"` |
+| `post_launch_key` | string (optional) | Key to press after launch: `"Play"` or `"Select"`. **Absent** for launch-only channels (e.g. YouTube, Apple TV+), whose launch needs no keypress |
+| `deep_link` | boolean (optional) | Default `true`. `false` for channels whose Roku app **ignores** deep-link params (Apple TV+): the launch only opens the app, and the consumer should tell the user to select the title manually |
 
 This extraction result is one kind of **content descriptor**. Channels not addressed by URL (e.g. Emby) are never produced by Function 1 — the caller supplies their descriptor. A descriptor's `post_launch_key` is likewise absent for launch-only channels like Emby, and it may carry optional channel-specific fields like `resume_position_ticks`.
 
@@ -118,10 +119,11 @@ Each supported channel is defined by these properties:
 |----------|---------|---------|---------|-------------|------|-----------|---------|
 | **Channel ID** | `12` | `291097` | `61322` | `13` | `2285` | `551012` | `837` |
 | **Channel Name** | `Netflix` | `Disney+` | `HBO Max` | `Prime Video` | `Hulu` | `Apple TV+` | `YouTube` |
-| **URL Regex** | `netflix\.com/(?:\w{2}(?:-\w{2})?/)?(?:watch\|title)/(\d+)` | `disneyplus\.com/(?:(?:play|video)/|browse/entity-)([a-f0-9-]+)` | `(?:max\.com|hbomax\.com)/(?:(?:movies|series|shows)/[^/]+/(?:s\d+/)?|(?:video/watch|play)/)([^/?]+)` | `(?:amazon\.com\|primevideo\.com)/.*?/([B][A-Z0-9]{9})` | `hulu\.com/(?:series\|watch\|movie)/(?:[a-z0-9-]+-)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})` | `tv\.apple\.com/(?:\w{2}/)?(?:show\|movie\|episode)/[^/]+/(umc\.cmc\.[a-z0-9]+)` | `(?:youtube\.com/watch\?(?:[^#\s]*&)?v=\|youtu\.be/)([A-Za-z0-9_-]{11})` |
-| **Content ID Format** | Numeric digits | UUID (hex + hyphens) | Alphanumeric + hyphens | ASIN (B + 9 alphanumeric) | UUID (hex + hyphens) | `umc.cmc.` + alphanumeric | 11 chars: letters, digits, `-`, `_` |
-| **Media Type Logic** | `/watch/` in matched text = `"movie"`, `/title/` in matched text = `"series"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` |
-| **Post-Launch Key** | `Play` | `Select` | `Select` | `Select` | `Select` | `Select` | none (launch-only) |
+| **URL Regex** | `netflix\.com/(?:\w{2}(?:-\w{2})?/)?(?:watch\|title)/(\d+)` | `disneyplus\.com/(?:(?:play|video)/|browse/entity-)([a-f0-9-]+)` | Two patterns, episode pages first — see channel entry | `(?:amazon\.com\|primevideo\.com)/.*?/([B][A-Z0-9]{9})` | `hulu\.com/(?:series\|watch\|movie)/(?:[a-z0-9-]+-)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})` | `tv\.apple\.com/(?:\w{2}/)?(?:show\|movie\|episode)/[^/]+/(umc\.cmc\.[a-z0-9]+)` | `(?:youtube\.com/watch\?(?:[^#\s]*&)?v=\|youtu\.be/)([A-Za-z0-9_-]{11})` |
+| **Content ID Format** | Numeric digits | UUID (hex + hyphens) | UUID (hex + hyphens); legacy alphanumeric | ASIN (B + 9 alphanumeric) | UUID (hex + hyphens) | `umc.cmc.` + alphanumeric | 11 chars: letters, digits, `-`, `_` |
+| **Media Type Logic** | `/watch/` in matched text = `"movie"`, `/title/` in matched text = `"series"` | Always `"movie"` | Episode page = `"episode"`; `/shows/` or `/series/` in matched text = `"series"`; else `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` | Always `"movie"` |
+| **Post-Launch Key** | `Play` | `Select` | `Select` | `Select` | `Select` | none (launch-only) | none (launch-only) |
+| **Deep Link** | yes | yes | video ids only — see channel entry | yes | yes | **no — app ignores deep links** | yes |
 | **Public Domain(s)** | `netflix.com` | `disneyplus.com` | `max.com`, `hbomax.com` | `amazon.com`, `primevideo.com` | `hulu.com` | `tv.apple.com` | `youtube.com`, `youtu.be` |
 
 Emby (channel `44191`) is addressed by content descriptor rather than URL, and is launch-only (no post-launch key) — see its entry below.
@@ -154,18 +156,40 @@ Emby (channel `44191`) is addressed by content descriptor rather than URL, and i
 
 #### HBO Max (Channel ID: 61322)
 
-- **URL regex:** `(?:max\.com|hbomax\.com)/(?:(?:movies|series|shows)/[^/]+/(?:s\d+/)?|(?:video/watch|play)/)([^/?]+)`
+**The Roku app plays only *video* ids** (episode/feature UUIDs) — device-verified 2026-08-15
+(app v7.9.0): a show-entity UUID deep-links to *"This video is not available"*, while any of a
+show's episode UUIDs plays. The `mediaType` param selects the behavior:
+
+| `mediaType` | On-device behavior with a video id |
+|-------------|-----------------------------------|
+| `episode` | Play that episode, resuming its bookmark |
+| `movie` | Play that video from the beginning |
+| `series` | Smart bookmark: play the **next unwatched episode of the show the video belongs to** (which episode uuid was passed doesn't matter) |
+
+- **URL regexes** (try in order, first match wins):
+  1. Episode pages — capture the **last** UUID (the playable video id):
+     `(?:max\.com|hbomax\.com)/shows/[^/]+/s\d+/{UUID}/[^/?#]+/({UUID})` where `{UUID}` is
+     `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}` → media_type `"episode"`
+  2. Other pages:
+     `(?:max\.com|hbomax\.com)/(?:(?:movies|series|shows)/[^/]+/(?:s\d+/)?|(?:video/watch|play)/)([^/?]+)`
+     → media_type `"series"` when the matched text contains `/shows/` or `/series/`, else `"movie"`
 - Matches both `max.com` (current domain) and `hbomax.com` (legacy domain)
-- Captures content ID from `/movies/{slug}/{id}`, `/series/{slug}/{id}`, `/shows/{slug}/{id}`, `/video/watch/{id}`, or `/play/{id}` paths
-- `/shows/` is the current site's URL scheme. An optional season segment (`s1/`, `s2/`, …) may sit between the slug and the ID — the same show UUID appears on show pages (`/shows/white-lotus/{uuid}`), episode pages (`/shows/white-lotus/s1/{uuid}/e1-arrivals/28`), and sub-pages (`/shows/white-lotus/{uuid}/cast-and-crew`)
-- Content ID stops at the first `/` or `?` character (captured by `[^/?]+`)
-- **Important:** For URLs like `/video/watch/{id1}/{id2}`, only the first ID is captured. Do NOT use `/movie/{id}` URLs — those IDs don't work for deep linking.
-- **Media type:** Always `"movie"`
+- `/shows/` is the current site's URL scheme. An optional season segment (`s1/`, `s2/`, …) may sit
+  between the slug and the ID. Episode pages are
+  `/shows/{slug}/s{N}/{show-uuid}/{episode-slug}/{episode-uuid}`; show pages
+  (`/shows/white-lotus/{uuid}`) and sub-pages (`/shows/white-lotus/{uuid}/cast-and-crew`) carry the
+  show-entity UUID.
+- **A `"series"` capture is a show-entity uuid and is NOT directly playable** — consumers must
+  resolve it to an episode uuid before launching (see §11 *Max Show-Page Resolution*), then launch
+  with `mediaType=series` for continue-watching semantics.
+- **Important:** For URLs like `/video/watch/{id1}/{id2}`, only the first ID is captured. Do NOT
+  use `/movie/{id}` URLs — those IDs don't work for deep linking.
 - **Post-launch key:** `Select` — profile selection, then auto-play
 - **Example URLs:**
   - `https://www.max.com/video/watch/bd43b2a4-1639-4197-96d4-2ec14eb45e9e` → content_id=`bd43b2a4-1639-4197-96d4-2ec14eb45e9e`, media_type=`movie`
   - `https://www.hbomax.com/video/watch/legacy-id` → content_id=`legacy-id`, media_type=`movie`
-  - `https://www.hbomax.com/shows/white-lotus/14f9834d-bc23-41a8-ab61-5c8abdbea505` → content_id=`14f9834d-bc23-41a8-ab61-5c8abdbea505`, media_type=`movie`
+  - `https://www.hbomax.com/shows/white-lotus/14f9834d-bc23-41a8-ab61-5c8abdbea505` → content_id=`14f9834d-bc23-41a8-ab61-5c8abdbea505`, media_type=`series` (needs episode resolution before launch)
+  - `https://www.max.com/shows/pitt-2024/s1/e6e7bad9-d48d-4434-b334-7c651ffc4bdf/e1-700-am/e4b915fb-5e6b-42b8-97ac-90ec7d0e3147` → content_id=`e4b915fb-5e6b-42b8-97ac-90ec7d0e3147`, media_type=`episode`
 
 #### Prime Video (Channel ID: 13)
 
@@ -203,14 +227,22 @@ Emby (channel `44191`) is addressed by content descriptor rather than URL, and i
 
 #### Apple TV+ (Channel ID: 551012)
 
+**The Roku app ignores ECP deep links entirely** — device-verified 2026-08-15 (app v16.2.82):
+show id + `mediaType=series`, movie id + `mediaType=movie`, the `/input` variant on a running app,
+and Roku universal-search auto-launch (`/search/browse` with `launch=true`) all land on the app
+home screen. Launching can only **open the app**; the user must select the title manually.
+
 - **URL regex:** `tv\.apple\.com/(?:\w{2}/)?(?:show|movie|episode)/[^/]+/(umc\.cmc\.[a-z0-9]+)`
 - Matches `/show/`, `/movie/`, and `/episode/` paths, with an optional two-letter region segment (e.g. `/us/`) before the type
 - Content IDs are Apple `umc.cmc.` identifiers followed by lowercase alphanumerics (e.g., `umc.cmc.1srk2goyh2q2zdxcx605w8vtx`)
-- **Media type:** Always `"movie"`
-- **Post-launch key:** `Select` — press Select once the app loads to begin playback
+- **Media type:** Always `"movie"` (moot on-device — the app ignores the params; kept for the standard param shape)
+- **Post-launch key:** none — launch-only. A blind Select on the app home screen could activate a
+  random focused tile, so the extraction result **omits** `post_launch_key`.
+- **Deep link:** `false` — the extraction result carries `deep_link: false`; consumers should tell
+  the user the app opened but the title must be selected manually.
 - **Example URLs:**
-  - `https://tv.apple.com/us/show/severance/umc.cmc.1srk2goyh2q2zdxcx605w8vtx` → content_id=`umc.cmc.1srk2goyh2q2zdxcx605w8vtx`, media_type=`movie`
-  - `https://tv.apple.com/movie/killers-of-the-flower-moon/umc.cmc.5x1fg9gl9mwn7qzd3s6ztph5p` → content_id=`umc.cmc.5x1fg9gl9mwn7qzd3s6ztph5p`, media_type=`movie`
+  - `https://tv.apple.com/us/show/severance/umc.cmc.1srk2goyh2q2zdxcx605w8vtx` → content_id=`umc.cmc.1srk2goyh2q2zdxcx605w8vtx`, media_type=`movie`, deep_link=`false`
+  - `https://tv.apple.com/movie/killers-of-the-flower-moon/umc.cmc.5x1fg9gl9mwn7qzd3s6ztph5p` → content_id=`umc.cmc.5x1fg9gl9mwn7qzd3s6ztph5p`, media_type=`movie`, deep_link=`false`
 
 #### YouTube (Channel ID: 837)
 
@@ -537,9 +569,9 @@ Any implementation must expose exactly these two functions:
 ## 10. Test Fixtures
 
 See `test_fixtures.json` for a complete set of test cases:
-- **27 valid URLs** covering all channels and edge cases (with/without www, query params, legacy domains, Netflix locale prefixes, media-type adversarial cases, YouTube query-param capture, HBO Max `/shows/` pages)
+- **28 valid URLs** covering all channels and edge cases (with/without www, query params, legacy domains, Netflix locale prefixes, media-type adversarial cases, YouTube query-param capture, HBO Max `/shows/` and episode pages, Apple TV+ `deep_link: false`)
 - **16 invalid URLs** that should return null (browse pages, root pages, search pages, malformed video IDs, unsupported services)
-- **9 playback command cases**: URL channels (wait + keypress), YouTube (launch-only from a URL extraction), and Emby (launch-only descriptor, with and without a resume position)
+- **9 playback command cases**: URL channels (wait + keypress), and the launch-only channels — YouTube and Apple TV+ (from URL extractions) and Emby (descriptor, with and without a resume position)
 
 Verification probes (§4 Prime Video, §11) are live HTTP calls and are not fixture-testable; fixtures cover extraction and playback-command construction only.
 
@@ -570,7 +602,25 @@ Iterate the ranked results, extracting a candidate per channel with `convert_url
 
 Search result *titles* distinguish Amazon streaming pages ("Watch {title} | Prime Video") from retail pages ("Amazon.com: {title} : ..."). This may be used to prefer candidates before probing, but never as sole grounds for rejection — the probe is the authoritative check.
 
+### Max Show-Page Resolution
+
+An HBO Max candidate whose media_type is `"series"` carries a show-entity uuid, which the Roku app
+cannot play (see the channel entry). Before accepting it, resolve to an episode uuid:
+
+1. `GET` the candidate's source URL (the show page) with a browser-like `User-Agent`, following
+   redirects.
+2. Search the HTML for `/s{N}/{show-uuid}/{episode-slug}/({UUID})` where `{show-uuid}` is the
+   captured content id — anchoring on the show uuid keeps recommendation tiles for *other* shows
+   from matching. The captured `{UUID}` is a playable episode id (any episode works: launched with
+   `mediaType=series`, the app smart-bookmarks to the next unwatched episode).
+3. Replace the candidate's content id with the episode uuid, keeping `mediaType=series`.
+
+**Fail closed.** If the fetch fails or the page yields no episode uuid, reject the candidate —
+launching a show uuid is a guaranteed-broken deep link, never worth falling back to. The §11
+rejection rule applies: a rejected candidate must not satisfy or block the channel.
+
 ### Known Limitations
 
 - **Netflix placeholders:** netflix.com serves `/title/{id}` pages for catalog titles it cannot currently stream (e.g. DVD-era entries). These match the Netflix regex, and no URL-level or cheap unauthenticated HTTP discriminator is known — placeholder and playable pages both return 200 with equivalent markers. A deep link to one opens Netflix but cannot play.
 - **primevideo.com GTI URLs:** primevideo.com results often use slug + GTI paths (`/detail/{slug}/{GTI}`) that carry no ASIN and therefore do not match. This is expected — the deep-linkable ASIN typically surfaces on an amazon.com `/dp/` result for the same title.
+- **Apple TV+ cannot deep-link at all:** the Roku app ignores every ECP deep-link form (see the channel entry). Extraction still yields the match so consumers can open the app, but `deep_link: false` signals that the user must select the title manually.
