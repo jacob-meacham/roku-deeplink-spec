@@ -180,8 +180,9 @@ show's episode UUIDs plays. The `mediaType` param selects the behavior:
   (`/shows/white-lotus/{uuid}`) and sub-pages (`/shows/white-lotus/{uuid}/cast-and-crew`) carry the
   show-entity UUID.
 - **A `"series"` capture is a show-entity uuid and is NOT directly playable** — consumers must
-  resolve it to an episode uuid before launching (see §11 *Max Show-Page Resolution*), then launch
-  with `mediaType=series` for continue-watching semantics.
+  resolve it to an episode uuid before launching (see §11 *Max Launch Resolution*), picking the
+  `mediaType` that matches the user's intent: `series` to resume the show, `episode` for a
+  requested specific episode.
 - **Important:** For URLs like `/video/watch/{id1}/{id2}`, only the first ID is captured. Do NOT
   use `/movie/{id}` URLs — those IDs don't work for deep linking.
 - **Post-launch key:** `Select` — profile selection, then auto-play
@@ -602,23 +603,42 @@ Iterate the ranked results, extracting a candidate per channel with `convert_url
 
 Search result *titles* distinguish Amazon streaming pages ("Watch {title} | Prime Video") from retail pages ("Amazon.com: {title} : ..."). This may be used to prefer candidates before probing, but never as sole grounds for rejection — the probe is the authoritative check.
 
-### Max Show-Page Resolution
+### Max Launch Resolution (Intent-Driven)
 
-An HBO Max candidate whose media_type is `"series"` carries a show-entity uuid, which the Roku app
-cannot play (see the channel entry). Before accepting it, resolve to an episode uuid:
+The Roku app's device-verified `mediaType` semantics (see the channel entry) let a consumer map
+user intent onto the exact launch. An accepted HBO Max show/episode candidate (media_type
+`"series"` or `"episode"`) is resolved against the request — either a **specific episode**
+(season `S`, episode `E`) or **show-level intent** ("watch / resume / continue the show", no
+episode given). Movie/watch captures (media_type `"movie"`) launch as-is.
 
-1. `GET` the candidate's source URL (the show page) with a browser-like `User-Agent`, following
-   redirects.
-2. Search the HTML for `/s{N}/{show-uuid}/{episode-slug}/({UUID})` where `{show-uuid}` is the
-   captured content id — anchoring on the show uuid keeps recommendation tiles for *other* shows
-   from matching. The captured `{UUID}` is a playable episode id — any episode of the show works:
-   launched with `mediaType=series`, the app ignores which episode was passed and resumes the
-   account's series position (device-verified).
-3. Replace the candidate's content id with the episode uuid, keeping `mediaType=series`.
+**Show-level intent** — launch *any* of the show's video uuids with `mediaType=series`; the app
+ignores which uuid was passed and resumes the account's series position:
 
-**Fail closed.** If the fetch fails or the page yields no episode uuid, reject the candidate —
-launching a show uuid is a guaranteed-broken deep link, never worth falling back to. The §11
-rejection rule applies: a rejected candidate must not satisfy or block the channel.
+- An episode-page capture is already a video uuid: use it directly, switching `mediaType` to
+  `"series"`.
+- A show-page capture is an unplayable show-entity uuid: `GET` the source URL with a browser-like
+  `User-Agent` (following redirects) and search the HTML for
+  `/s{N}/{show-uuid}/{episode-slug}/({UUID})`, where `{show-uuid}` is the captured content id —
+  anchoring on the show uuid keeps recommendation tiles for *other* shows from matching. Use the
+  first captured `{UUID}` with `mediaType=series`.
+
+**Specific-episode intent** — launch *that episode's* uuid with `mediaType=episode` (plays the
+passed episode, resuming its bookmark):
+
+- If the matched URL is already that episode's page — its path carries `/s{S}/…/e{E}-…/` (any
+  season when the request omitted one) — use its capture directly.
+- Otherwise fetch the source URL as above and search for
+  `/s{S}/{show-uuid}/e{E}(?:-{slug})?/({UUID})` (season pattern `s\d+` when unspecified). For an
+  episode-page candidate, the show uuid is the path segment before the episode's.
+
+**The resolver's mediaType outranks any generic caller classification** — it is a launch parameter
+paired to the id just chosen; overriding it (e.g. `movie` on a resume launch) changes playback
+behavior wrongly.
+
+**Fail closed.** If the fetch fails or the page yields no suitable episode uuid, reject the
+candidate — a show uuid is a guaranteed-broken deep link and a wrong episode is a wrong-content
+surprise; neither is worth falling back to. The §11 rejection rule applies: a rejected candidate
+must not satisfy or block the channel.
 
 ### Known Limitations
 
