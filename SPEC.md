@@ -164,7 +164,7 @@ show's episode UUIDs plays. The `mediaType` param selects the behavior:
 |-------------|-----------------------------------|
 | `episode` | Play that episode, resuming its bookmark |
 | `movie` | Play that video from the beginning |
-| `series` | Smart bookmark: play the **next unwatched episode of the show the video belongs to** (which episode uuid was passed doesn't matter) |
+| `series` | Smart bookmark: **resume the show the video belongs to where the account left off** — the current episode at its saved position. Which episode uuid was passed does not select the episode (device-verified: passing S1E5's uuid resumed S1E2 at its bookmark) |
 
 - **URL regexes** (try in order, first match wins):
   1. Episode pages — capture the **last** UUID (the playable video id):
@@ -611,8 +611,9 @@ cannot play (see the channel entry). Before accepting it, resolve to an episode 
    redirects.
 2. Search the HTML for `/s{N}/{show-uuid}/{episode-slug}/({UUID})` where `{show-uuid}` is the
    captured content id — anchoring on the show uuid keeps recommendation tiles for *other* shows
-   from matching. The captured `{UUID}` is a playable episode id (any episode works: launched with
-   `mediaType=series`, the app smart-bookmarks to the next unwatched episode).
+   from matching. The captured `{UUID}` is a playable episode id — any episode of the show works:
+   launched with `mediaType=series`, the app ignores which episode was passed and resumes the
+   account's series position (device-verified).
 3. Replace the candidate's content id with the episode uuid, keeping `mediaType=series`.
 
 **Fail closed.** If the fetch fails or the page yields no episode uuid, reject the candidate —
